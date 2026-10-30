@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "854816640870",
+    "project_id": "industria-e-manuntencao",
+    "storage_bucket": "industria-e-manuntencao.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:854816640870:android:a6141cda0cca8c42bac2a7",
+        "android_client_info": {
+          "package_name": "com.example.industria_e_manuntecao"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAifX5HV2Qpoj-XnxQezmi4hVyBCUBvcqY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
