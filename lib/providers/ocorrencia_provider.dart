@@ -1,18 +1,22 @@
 // lib/providers/ocorrencia_provider.dart
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/equipamento.dart';
 import '../models/historico.dart';
 import '../models/ocorrencia.dart';
+import '../models/usuario.dart';
 import '../utils/constants.dart';
 
 class OcorrenciaProvider extends ChangeNotifier {
   List<Ocorrencia> _ocorrencias = [];
   List<Equipamento> _equipamentos = [];
+  List<Map<String, String>> _tecnicosDisponiveis = [];
   bool _isLoading = false;
 
   List<Ocorrencia> get ocorrencias => _ocorrencias;
   List<Equipamento> get equipamentos => _equipamentos;
+  List<Map<String, String>> get tecnicosDisponiveis => _tecnicosDisponiveis;
   bool get isLoading => _isLoading;
 
   Map<String, Equipamento> get equipamentosPorId => {
@@ -20,238 +24,643 @@ class OcorrenciaProvider extends ChangeNotifier {
       };
 
   OcorrenciaProvider() {
-    _carregarMockData();
+    _listenToMaquinas();
+    _listenToOcorrencias();
+    _listenToUsuarios();
   }
 
-  void _carregarMockData() {
-    _equipamentos = [
-      Equipamento(
-        id: 'eq-1',
-        tag: 'CNC-01',
-        nome: 'Torno CNC Operacional',
-        localizacao: 'Setor de Usinagem A',
-        status: StatusEquipamento.operando,
-        ultimoAtualizacao: DateTime.now().subtract(const Duration(minutes: 15)),
-        tempoOperacaoTotal: 1240.0,
-        numeroParadas: 2,
-        tempoParado: 1800,
-      ),
-      Equipamento(
-        id: 'eq-2',
-        tag: 'PR-02',
-        nome: 'Prensa Hidráulica 50T',
-        localizacao: 'Setor de Estamparia',
-        status: StatusEquipamento.parada,
-        ultimoAtualizacao: DateTime.now().subtract(const Duration(hours: 1)),
-        ultimaParada: DateTime.now().subtract(const Duration(hours: 1)),
-        motivoParada: 'Superaquecimento da bomba de pressão',
-        responsavel: PerfilUsuario.operador,
-        tempoOperacaoTotal: 860.0,
-        numeroParadas: 5,
-        tempoParado: 5400,
-      ),
-      Equipamento(
-        id: 'eq-3',
-        tag: 'INJ-03',
-        nome: 'Injetora de Termoplásticos',
-        localizacao: 'Pavilhão de Plásticos',
-        status: StatusEquipamento.manutencao,
-        ultimoAtualizacao: DateTime.now().subtract(const Duration(hours: 3)),
-        ultimaParada: DateTime.now().subtract(const Duration(hours: 4)),
-        motivoParada: 'Manutenção preventiva dos cilindros',
-        responsavel: PerfilUsuario.tecnico,
-        tempoOperacaoTotal: 2150.0,
-        numeroParadas: 3,
-        tempoParado: 14400,
-      ),
-      Equipamento(
-        id: 'eq-4',
-        tag: 'EST-04',
-        nome: 'Esteira Transportadora Central',
-        localizacao: 'Linha de Montagem 2',
-        status: StatusEquipamento.aguardandoMaterial,
-        ultimoAtualizacao: DateTime.now().subtract(const Duration(hours: 2)),
-        ultimaParada: DateTime.now().subtract(const Duration(hours: 2)),
-        motivoParada: 'Aguardando correia dentada de reposição',
-        responsavel: PerfilUsuario.supervisor,
-        tempoOperacaoTotal: 3400.0,
-        numeroParadas: 8,
-        tempoParado: 7200,
-      ),
-    ];
+  void _listenToMaquinas() {
+    FirebaseFirestore.instance.collection('maquinas').snapshots().listen((snapshot) {
+      _equipamentos = snapshot.docs.map((doc) {
+        final data = doc.data();
 
-    _ocorrencias = [
-      Ocorrencia(
-        id: 'oc-1',
-        equipamentoId: 'eq-2',
-        equipamentoTag: 'PR-02',
-        motivo: 'Superaquecimento de Bomba',
-        descricao: 'Temperatura ultrapassou 85°C na bomba hidráulica principal.',
-        prioridade: 'Alta',
-        status: StatusOcorrencia.aberta,
-        dataAbertura: DateTime.now().subtract(const Duration(hours: 1)),
-        historico: [
-          HistoricoItem(
-            data: DateTime.now().subtract(const Duration(hours: 1)),
-            tipo: 'abertura',
-            descricao: 'Parada registrada pelo operador.',
-            por: 'João Silva',
-            statusOcorrencia: StatusOcorrencia.aberta,
-            statusEquipamento: StatusEquipamento.parada,
-          ),
-        ],
-      ),
-      Ocorrencia(
-        id: 'oc-2',
-        equipamentoId: 'eq-3',
-        equipamentoTag: 'INJ-03',
-        motivo: 'Troca de Vedação de Pistão',
-        descricao: 'Vazamento de óleo detectado no cilindro injetor secundário.',
-        prioridade: 'Média',
-        status: StatusOcorrencia.emAndamento,
-        dataAbertura: DateTime.now().subtract(const Duration(hours: 4)),
-        dataInicio: DateTime.now().subtract(const Duration(hours: 2)),
-        tecnicoResponsavel: 'Carlos Mendes',
-        pecasTrocadas: ['Anel O-Ring 45mm', 'Retentor de alta pressão'],
-        historico: [
-          HistoricoItem(
-            data: DateTime.now().subtract(const Duration(hours: 4)),
-            tipo: 'abertura',
-            descricao: 'Ocorrência registrada no sistema.',
-            por: 'Ana Costa',
-            statusOcorrencia: StatusOcorrencia.aberta,
-          ),
-          HistoricoItem(
-            data: DateTime.now().subtract(const Duration(hours: 2)),
-            tipo: 'inicio',
-            descricao: 'Início do atendimento técnico.',
-            por: 'Carlos Mendes',
-            statusOcorrencia: StatusOcorrencia.emAndamento,
-            statusEquipamento: StatusEquipamento.manutencao,
-          ),
-        ],
-      ),
-      Ocorrencia(
-        id: 'oc-3',
-        equipamentoId: 'eq-1',
-        equipamentoTag: 'CNC-01',
-        motivo: 'Calibração de Eixo Z',
-        descricao: 'Desvio de 0.05mm nas peças usinadas durante o lote matutino.',
-        prioridade: 'Baixa',
-        status: StatusOcorrencia.finalizada,
-        dataAbertura: DateTime.now().subtract(const Duration(days: 1, hours: 3)),
-        dataInicio: DateTime.now().subtract(const Duration(days: 1, hours: 2)),
-        dataFim: DateTime.now().subtract(const Duration(days: 1)),
-        tecnicoResponsavel: 'Carlos Mendes',
-        observacaoFinal: 'Eixo recalibrado e testado com peça padrão. Tolerância OK.',
-        historico: [
-          HistoricoItem(
-            data: DateTime.now().subtract(const Duration(days: 1, hours: 3)),
-            tipo: 'abertura',
-            descricao: 'Abertura para ajuste de tolerância.',
-            por: 'João Silva',
-            statusOcorrencia: StatusOcorrencia.aberta,
-          ),
-          HistoricoItem(
-            data: DateTime.now().subtract(const Duration(days: 1, hours: 2)),
-            tipo: 'inicio',
-            descricao: 'Início dos ensaios de calibração.',
-            por: 'Carlos Mendes',
-            statusOcorrencia: StatusOcorrencia.emAndamento,
-          ),
-          HistoricoItem(
-            data: DateTime.now().subtract(const Duration(days: 1)),
-            tipo: 'finalizacao',
-            descricao: 'Serviço finalizado e aprovado.',
-            por: 'Carlos Mendes',
-            statusOcorrencia: StatusOcorrencia.finalizada,
-            statusEquipamento: StatusEquipamento.operando,
-          ),
-        ],
-      ),
-    ];
+        DateTime ultimoAtualizacao = DateTime.now();
+        if (data['ultimoAtualizacao'] is Timestamp) {
+          ultimoAtualizacao = (data['ultimoAtualizacao'] as Timestamp).toDate();
+        } else if (data['ultimoAtualizacao'] is String) {
+          ultimoAtualizacao = DateTime.tryParse(data['ultimoAtualizacao']) ?? DateTime.now();
+        }
+
+        DateTime? ultimaParada;
+        if (data['ultimaParada'] is Timestamp) {
+          ultimaParada = (data['ultimaParada'] as Timestamp).toDate();
+        } else if (data['ultimaParada'] is String) {
+          ultimaParada = DateTime.tryParse(data['ultimaParada']);
+        }
+
+        final tag = (data['tag'] ?? data['codigo'] ?? 'EQ-${doc.id.substring(0, doc.id.length >= 4 ? 4 : doc.id.length)}').toString();
+        final nome = (data['nome'] ?? data['nome '] ?? 'Equipamento').toString();
+        final localizacao = (data['localizacao'] ?? 'Parque Industrial').toString();
+
+        return Equipamento(
+          id: doc.id,
+          tag: tag,
+          nome: nome,
+          localizacao: localizacao,
+          status: _parseStatus(data['status']?.toString()),
+          ultimoAtualizacao: ultimoAtualizacao,
+          ultimaParada: ultimaParada,
+          motivoParada: data['motivoParada']?.toString(),
+          responsavel: _parsePerfil(data['responsavel']?.toString()),
+          tempoOperacaoTotal: (data['tempoOperacaoTotal'] as num?)?.toDouble() ?? 0.0,
+          numeroParadas: (data['numeroParadas'] as num?)?.toInt() ?? 0,
+          tempoParado: (data['tempoParado'] as num?)?.toInt() ?? 0,
+        );
+      }).toList();
+      notifyListeners();
+    });
+  }
+
+  void _listenToOcorrencias() {
+    _isLoading = true;
+    FirebaseFirestore.instance.collection('ocorrencias').snapshots().listen((snapshot) {
+      _ocorrencias = snapshot.docs.map((doc) {
+        final data = doc.data();
+
+        DateTime dataAbertura = DateTime.now();
+        if (data['dataAbertura'] is Timestamp) {
+          dataAbertura = (data['dataAbertura'] as Timestamp).toDate();
+        } else if (data['dataAbertura'] is String) {
+          dataAbertura = DateTime.tryParse(data['dataAbertura']) ?? DateTime.now();
+        }
+
+        DateTime? dataInicio;
+        if (data['dataInicio'] is Timestamp) {
+          dataInicio = (data['dataInicio'] as Timestamp).toDate();
+        } else if (data['dataInicio'] is String) {
+          dataInicio = DateTime.tryParse(data['dataInicio']);
+        }
+
+        DateTime? dataFim;
+        if (data['dataFim'] is Timestamp) {
+          dataFim = (data['dataFim'] as Timestamp).toDate();
+        } else if (data['dataFim'] is String) {
+          dataFim = DateTime.tryParse(data['dataFim']);
+        }
+
+        DateTime? proximaManutencao;
+        if (data['proximaManutencao'] is Timestamp) {
+          proximaManutencao = (data['proximaManutencao'] as Timestamp).toDate();
+        } else if (data['proximaManutencao'] is String) {
+          proximaManutencao = DateTime.tryParse(data['proximaManutencao']);
+        }
+
+        List<HistoricoItem> historico = [];
+        if (data['historico'] is List) {
+          historico = (data['historico'] as List).map((h) {
+            if (h is Map<String, dynamic>) {
+              return HistoricoItem.fromJson(h);
+            } else if (h is Map) {
+              return HistoricoItem.fromJson(Map<String, dynamic>.from(h));
+            }
+            return null;
+          }).whereType<HistoricoItem>().toList();
+        }
+
+        return Ocorrencia(
+          id: doc.id,
+          equipamentoId: (data['equipamentoId'] ?? '').toString(),
+          equipamentoTag: (data['equipamentoTag'] ?? '').toString(),
+          motivo: (data['motivo'] ?? '').toString(),
+          descricao: (data['descricao'] ?? '').toString(),
+          prioridade: (data['prioridade'] ?? 'Média').toString(),
+          status: _parseStatusOcorrencia(data['status']),
+          dataAbertura: dataAbertura,
+          dataInicio: dataInicio,
+          dataFim: dataFim,
+          tecnicoResponsavel: data['tecnicoResponsavel']?.toString(),
+          observacaoFinal: data['observacaoFinal']?.toString(),
+          pecasTrocadas: List<String>.from(data['pecasTrocadas'] ?? []),
+          proximaManutencao: proximaManutencao,
+          historico: historico,
+        );
+      }).toList();
+
+      // Ordenar por dataAbertura decrescente
+      _ocorrencias.sort((a, b) => b.dataAbertura.compareTo(a.dataAbertura));
+
+      _isLoading = false;
+      notifyListeners();
+    }, onError: (_) {
+      _isLoading = false;
+      notifyListeners();
+    });
+  }
+
+  void _listenToUsuarios() {
+    FirebaseFirestore.instance.collection('usuarios').snapshots().listen((snapshot) {
+      _tecnicosDisponiveis = snapshot.docs
+          .where((doc) {
+            final data = doc.data();
+            final perfil = (data['perfil'] ?? '').toString().toLowerCase();
+            return perfil.contains('tecnic') || perfil.contains('técnic') || perfil == '1';
+          })
+          .map((doc) {
+            final data = doc.data();
+            final nome = (data['nome'] ?? data['nomeFuncionario'] ?? doc.id).toString();
+            return {
+              'id': doc.id,
+              'nome': nome,
+            };
+          })
+          .toList();
+      notifyListeners();
+    });
+  }
+
+  StatusEquipamento _parseStatus(String? status) {
+    if (status == null) return StatusEquipamento.operando;
+    final s = status.toLowerCase().replaceAll('_', '').replaceAll(' ', '');
+    if (s.contains('parada') || s.contains('parado')) return StatusEquipamento.parada;
+    if (s.contains('manutenc')) return StatusEquipamento.manutencao;
+    if (s.contains('material') || s.contains('aguardando')) return StatusEquipamento.aguardandoMaterial;
+    if (s.contains('aprovac')) return StatusEquipamento.aguardandoAprovacao;
+    if (s.contains('indisponivel')) return StatusEquipamento.indisponivel;
+    return StatusEquipamento.operando;
+  }
+
+  PerfilUsuario? _parsePerfil(String? perfil) {
+    if (perfil == null) return null;
+    final p = perfil.toLowerCase();
+    if (p.contains('operad')) return PerfilUsuario.operador;
+    if (p.contains('tecnic') || p.contains('técnic')) return PerfilUsuario.tecnico;
+    if (p.contains('supervis')) return PerfilUsuario.supervisor;
+    if (p.contains('gestor') || p.contains('admin')) return PerfilUsuario.gestor;
+    return null;
+  }
+
+  StatusOcorrencia _parseStatusOcorrencia(dynamic status) {
+    if (status == null) return StatusOcorrencia.aberta;
+    if (status is int) {
+      if (status >= 0 && status < StatusOcorrencia.values.length) {
+        return StatusOcorrencia.values[status];
+      }
+    }
+    final s = status.toString().toLowerCase().replaceAll('_', '').replaceAll(' ', '');
+    if (s.contains('andamento') || s == '1') return StatusOcorrencia.emAndamento;
+    if (s.contains('material') || s == '2') return StatusOcorrencia.aguardandoMaterial;
+    if (s.contains('aprovac') || s == '3') return StatusOcorrencia.aguardandoAprovacao;
+    if (s.contains('finaliz') || s == '4' || s == 'conclu') return StatusOcorrencia.finalizada;
+    return StatusOcorrencia.aberta;
   }
 
   Future<void> carregarOcorrencias() async {
     _isLoading = true;
     notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 600));
+    await Future.delayed(const Duration(milliseconds: 300));
     _isLoading = false;
     notifyListeners();
   }
 
-  Future<void> iniciarAtendimento(String ocorrenciaId) async {
+  // =========================================================================
+  // 1. AÇÕES DO OPERADOR (Com validações de RBAC e Integridade)
+  // =========================================================================
+
+  /// REGRA DE NEGÓCIO: Não deve existir mais de uma parada ativa simultânea para a mesma máquina.
+  Future<void> registrarParadaCritica({
+    required String equipamentoId,
+    required String motivo,
+    required String prioridade,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.registrarParadaCritica)) {
+      throw Exception('Acesso negado: Perfil não autorizado a registrar paradas críticas.');
+    }
+
+    final paradaAtivaExistente = _ocorrencias.any((o) =>
+        o.equipamentoId == equipamentoId &&
+        (o.status == StatusOcorrencia.aberta ||
+            o.status == StatusOcorrencia.emAndamento ||
+            o.status == StatusOcorrencia.aguardandoMaterial ||
+            o.status == StatusOcorrencia.aguardandoAprovacao));
+
+    if (paradaAtivaExistente) {
+      throw Exception('Esta máquina já possui uma ocorrência ativa não finalizada!');
+    }
+
+    final eqIndex = _equipamentos.indexWhere((e) => e.id == equipamentoId);
+    if (eqIndex == -1) {
+      throw Exception('Equipamento não localizado no parque industrial.');
+    }
+
+    final eq = _equipamentos[eqIndex];
+    final agora = DateTime.now();
+
+    final novaOcorrencia = Ocorrencia(
+      equipamentoId: eq.id,
+      equipamentoTag: eq.tag,
+      motivo: motivo,
+      descricao: 'Parada crítica registrada no chão de fábrica por ${usuario.nome}.',
+      prioridade: prioridade,
+      status: StatusOcorrencia.aberta,
+      dataAbertura: agora,
+      historico: [
+        HistoricoItem(
+          data: agora,
+          tipo: 'abertura',
+          descricao: 'Parada registrada: $motivo (Prioridade: $prioridade)',
+          por: usuario.nome,
+          statusOcorrencia: StatusOcorrencia.aberta,
+          statusEquipamento: StatusEquipamento.parada,
+        ),
+      ],
+    );
+
+    // Salvar no Firestore (coleção ocorrencias)
+    await FirebaseFirestore.instance
+        .collection('ocorrencias')
+        .doc(novaOcorrencia.id)
+        .set(novaOcorrencia.toJson());
+
+    // Atualizar máquina no Firestore (coleção maquinas)
+    await FirebaseFirestore.instance.collection('maquinas').doc(eq.id).update({
+      'status': StatusEquipamento.parada.name,
+      'motivoParada': motivo,
+      'responsavel': PerfilUsuario.operador.name,
+      'ultimaParada': FieldValue.serverTimestamp(),
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+      'numeroParadas': FieldValue.increment(1),
+    });
+  }
+
+  /// Solicitar Atendimento de Manutenção (Operador)
+  Future<void> solicitarAtendimento({
+    required String ocorrenciaId,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.solicitarAtendimento)) {
+      throw Exception('Acesso negado: Perfil não autorizado a solicitar atendimento.');
+    }
+
     final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
     if (index != -1) {
       final o = _ocorrencias[index];
-      final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      final historico = List<HistoricoItem>.from(o.historico)
         ..add(
           HistoricoItem(
             data: DateTime.now(),
-            tipo: 'inicio',
-            descricao: 'Atendimento técnico iniciado.',
-            por: 'Carlos Mendes',
-            statusOcorrencia: StatusOcorrencia.emAndamento,
-            statusEquipamento: StatusEquipamento.manutencao,
+            tipo: 'solicitacao',
+            descricao: 'Atendimento de emergência solicitado pelo operador.',
+            por: usuario.nome,
+            statusOcorrencia: o.status,
           ),
         );
 
-      _ocorrencias[index] = o.copyWith(
-        status: StatusOcorrencia.emAndamento,
-        dataInicio: DateTime.now(),
-        tecnicoResponsavel: 'Carlos Mendes',
-        historico: historicoAtualizado,
-      );
-
-      final eqIndex = _equipamentos.indexWhere((e) => e.id == o.equipamentoId);
-      if (eqIndex != -1) {
-        _equipamentos[eqIndex] = _equipamentos[eqIndex].copyWith(
-          status: StatusEquipamento.manutencao,
-          responsavel: PerfilUsuario.tecnico,
-          ultimoAtualizacao: DateTime.now(),
-        );
-      }
-
-      notifyListeners();
+      await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+        'historico': historico.map((h) => h.toJson()).toList(),
+      });
     }
   }
 
-  Future<void> finalizarAtendimento(
-    String ocorrenciaId,
-    String observacaoFinal,
-  ) async {
-    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
-    if (index != -1) {
-      final o = _ocorrencias[index];
-      final historicoAtualizado = List<HistoricoItem>.from(o.historico)
-        ..add(
-          HistoricoItem(
-            data: DateTime.now(),
-            tipo: 'finalizacao',
-            descricao: observacaoFinal,
-            por: o.tecnicoResponsavel ?? 'Carlos Mendes',
-            statusOcorrencia: StatusOcorrencia.finalizada,
-            statusEquipamento: StatusEquipamento.operando,
-          ),
-        );
+  // =========================================================================
+  // 2. AÇÕES DO TÉCNICO DE MANUTENÇÃO (Com validações de RBAC e Laudo)
+  // =========================================================================
 
-      _ocorrencias[index] = o.copyWith(
-        status: StatusOcorrencia.finalizada,
-        dataFim: DateTime.now(),
-        observacaoFinal: observacaoFinal,
-        historico: historicoAtualizado,
+  /// Assumir ocorrência aberta -> máquina passa a 'Em Manutenção' com timestamp de início
+  Future<void> assumirAtendimento({
+    required String ocorrenciaId,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.assumirManutencao)) {
+      throw Exception('Acesso negado: Apenas a equipe técnica pode assumir ocorrências.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não encontrada.');
+
+    final o = _ocorrencias[index];
+    if (o.status != StatusOcorrencia.aberta && o.status != StatusOcorrencia.aguardandoMaterial) {
+      throw Exception('Esta ocorrência não pode ser assumida no status atual (${o.status.nome}).');
+    }
+
+    final agora = DateTime.now();
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'inicio',
+          descricao: 'Atendimento assumido pelo técnico ${usuario.nome}.',
+          por: usuario.nome,
+          statusOcorrencia: StatusOcorrencia.emAndamento,
+          statusEquipamento: StatusEquipamento.manutencao,
+        ),
       );
 
-      final eqIndex = _equipamentos.indexWhere((e) => e.id == o.equipamentoId);
-      if (eqIndex != -1) {
-        _equipamentos[eqIndex] = _equipamentos[eqIndex].copyWith(
-          status: StatusEquipamento.operando,
-          ultimoAtualizacao: DateTime.now(),
-        );
-      }
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'status': StatusOcorrencia.emAndamento.index,
+      'dataInicio': (o.dataInicio ?? agora).toIso8601String(),
+      'tecnicoResponsavel': usuario.nome,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
 
-      notifyListeners();
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'status': StatusEquipamento.manutencao.name,
+      'responsavel': PerfilUsuario.tecnico.name,
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Pausar atendimento para status 'Aguardando Material'
+  Future<void> pausarAguardandoMaterial({
+    required String ocorrenciaId,
+    required String motivoPausa,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.pausarAguardandoMaterial)) {
+      throw Exception('Acesso negado: Apenas técnicos podem pausar por falta de material.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não encontrada.');
+
+    final o = _ocorrencias[index];
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'pausa',
+          descricao: 'Atendimento pausado: $motivoPausa',
+          por: usuario.nome,
+          statusOcorrencia: StatusOcorrencia.aguardandoMaterial,
+          statusEquipamento: StatusEquipamento.aguardandoMaterial,
+        ),
+      );
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'status': StatusOcorrencia.aguardandoMaterial.index,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'status': StatusEquipamento.aguardandoMaterial.name,
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// REGRA DE NEGÓCIO: Uma máquina em manutenção aberta NÃO PODE voltar a operar
+  /// sem o laudo de finalização técnico detalhado.
+  Future<void> finalizarAtendimentoComLaudo({
+    required String ocorrenciaId,
+    required String laudoTecnico,
+    required List<String> pecasTrocadas,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.finalizarComLaudo)) {
+      throw Exception('Acesso negado: Apenas a equipe técnica pode emitir laudo de finalização.');
+    }
+
+    if (laudoTecnico.trim().length < 10) {
+      throw Exception('Validação do Laudo: É obrigatório detalhar o procedimento com no mínimo 10 caracteres.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não encontrada.');
+
+    final o = _ocorrencias[index];
+    final agora = DateTime.now();
+
+    final ehCritica = o.prioridade == 'Crítica';
+    final novoStatusEq = ehCritica
+        ? StatusEquipamento.aguardandoAprovacao
+        : StatusEquipamento.operando;
+    final novoStatusOc = ehCritica
+        ? StatusOcorrencia.aguardandoAprovacao
+        : StatusOcorrencia.finalizada;
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'finalizacao',
+          descricao: 'Laudo Técnico: ${laudoTecnico.trim()}',
+          por: usuario.nome,
+          statusOcorrencia: novoStatusOc,
+          statusEquipamento: novoStatusEq,
+        ),
+      );
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'status': novoStatusOc.index,
+      'dataFim': agora.toIso8601String(),
+      'observacaoFinal': laudoTecnico.trim(),
+      'pecasTrocadas': pecasTrocadas,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'status': novoStatusEq.name,
+      'motivoParada': ehCritica ? 'Aguardando contra-assinatura do Supervisor' : null,
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Método compatível para iniciar atendimento
+  Future<void> iniciarAtendimento(String ocorrenciaId, [Usuario? usuario]) async {
+    final user = usuario ??
+        Usuario(
+          id: 'tec-padrao',
+          nome: 'Técnico Responsável',
+          email: 'tecnico@empresa.com',
+          senha: '',
+          perfil: PerfilUsuario.tecnico,
+        );
+    await assumirAtendimento(ocorrenciaId: ocorrenciaId, usuario: user);
+  }
+
+  /// Método compatível para finalizar atendimento
+  Future<void> finalizarAtendimento(String ocorrenciaId, String observacaoFinal, [Usuario? usuario]) async {
+    final user = usuario ??
+        Usuario(
+          id: 'tec-padrao',
+          nome: 'Técnico Responsável',
+          email: 'tecnico@empresa.com',
+          senha: '',
+          perfil: PerfilUsuario.tecnico,
+        );
+    final laudo = observacaoFinal.trim().length >= 10
+        ? observacaoFinal.trim()
+        : 'Manutenção técnica executada com sucesso e liberada.';
+    await finalizarAtendimentoComLaudo(
+      ocorrenciaId: ocorrenciaId,
+      laudoTecnico: laudo,
+      pecasTrocadas: const [],
+      usuario: user,
+    );
+  }
+
+  // =========================================================================
+  // 3. AÇÕES DO SUPERVISOR (Reatribuir prioridade e Contra-assinatura)
+  // =========================================================================
+
+  /// Reatribuir a prioridade de atendimento técnico das ocorrências
+  Future<void> reatribuirPrioridade({
+    required String ocorrenciaId,
+    required String novaPrioridade,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.reatribuirPrioridade)) {
+      throw Exception('Acesso negado: Apenas supervisores podem redefinir a prioridade.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não localizada.');
+
+    final o = _ocorrencias[index];
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'prioridade',
+          descricao: 'Prioridade redefinida de "${o.prioridade}" para "$novaPrioridade" por ${usuario.nome}.',
+          por: usuario.nome,
+          statusOcorrencia: o.status,
+        ),
+      );
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'prioridade': novaPrioridade,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+  }
+
+  /// Contra-assinatura do Supervisor para aprovar o retorno de máquinas críticas ao estado ativo
+  Future<void> contraAssinarRetorno({
+    required String ocorrenciaId,
+    required String parecerSupervisor,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.contraAssinarRetorno)) {
+      throw Exception('Acesso negado: Contra-assinatura reservada para o perfil de Supervisor.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não localizada.');
+
+    final o = _ocorrencias[index];
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'aprovacao',
+          descricao: 'Liberação contra-assinada pelo Supervisor: $parecerSupervisor',
+          por: usuario.nome,
+          statusOcorrencia: StatusOcorrencia.finalizada,
+          statusEquipamento: StatusEquipamento.operando,
+        ),
+      );
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'status': StatusOcorrencia.finalizada.index,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'status': StatusEquipamento.operando.name,
+      'motivoParada': null,
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Supervisor entrega o material solicitado pelo técnico,
+  /// fazendo a ocorrência retornar ao status 'Em Andamento'
+  Future<void> entregarMaterial({
+    required String ocorrenciaId,
+    required String descricaoEntrega,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.entregarMaterial)) {
+      throw Exception('Acesso negado: Apenas o Supervisor pode registrar entrega de materiais.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não encontrada.');
+
+    final o = _ocorrencias[index];
+    if (o.status != StatusOcorrencia.aguardandoMaterial) {
+      throw Exception('Esta ocorrência não está aguardando material (status atual: ${o.status.nome}).');
+    }
+
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'entrega_material',
+          descricao: 'Material entregue pelo Supervisor ${usuario.nome}: $descricaoEntrega',
+          por: usuario.nome,
+          statusOcorrencia: StatusOcorrencia.emAndamento,
+          statusEquipamento: StatusEquipamento.manutencao,
+        ),
+      );
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'status': StatusOcorrencia.emAndamento.index,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'status': StatusEquipamento.manutencao.name,
+      'motivoParada': 'Material entregue — manutenção retomada',
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Supervisor atribui uma ocorrência a um técnico específico
+  Future<void> atribuirTecnico({
+    required String ocorrenciaId,
+    required String tecnicoId,
+    required String tecnicoNome,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.atribuirTecnico)) {
+      throw Exception('Acesso negado: Apenas o Supervisor pode atribuir técnicos.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não encontrada.');
+
+    final o = _ocorrencias[index];
+    if (o.status == StatusOcorrencia.finalizada) {
+      throw Exception('Não é possível atribuir técnico a uma ocorrência já finalizada.');
+    }
+
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'atribuicao',
+          descricao: 'Manutenção atribuída ao técnico $tecnicoNome pelo Supervisor ${usuario.nome}.',
+          por: usuario.nome,
+          statusOcorrencia: o.status,
+        ),
+      );
+
+    final novoStatus = o.status == StatusOcorrencia.aberta
+        ? StatusOcorrencia.emAndamento
+        : o.status;
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'tecnicoResponsavel': tecnicoNome,
+      'status': novoStatus.index,
+      'dataInicio': (o.dataInicio ?? (novoStatus == StatusOcorrencia.emAndamento ? agora : null))?.toIso8601String(),
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    if (novoStatus == StatusOcorrencia.emAndamento && o.status == StatusOcorrencia.aberta) {
+      await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+        'status': StatusEquipamento.manutencao.name,
+        'responsavel': PerfilUsuario.tecnico.name,
+        'ultimoAtualizacao': FieldValue.serverTimestamp(),
+      });
     }
   }
 }
-

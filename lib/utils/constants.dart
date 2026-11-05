@@ -9,6 +9,7 @@ enum StatusEquipamento {
   parada,
   manutencao,
   aguardandoMaterial,
+  aguardandoAprovacao,
   indisponivel,
 }
 
@@ -17,7 +18,33 @@ enum PerfilUsuario { operador, tecnico, supervisor, gestor }
 enum StatusOcorrencia {
   aberta,
   emAndamento,
+  aguardandoMaterial,
+  aguardandoAprovacao,
   finalizada,
+}
+
+/// Permissões atômicas do sistema RBAC (Role-Based Access Control)
+enum AppPermission {
+  // 1. Operador (Chão de fábrica)
+  visualizarMaquinas,
+  registrarParadaCritica,
+  solicitarAtendimento,
+
+  // 2. Técnico de Manutenção (Equipe técnica)
+  assumirManutencao,
+  pausarAguardandoMaterial,
+  finalizarComLaudo,
+
+  // 3. Supervisor (Gestão de turno)
+  filtrosAvancadosIndisponibilidade,
+  reatribuirPrioridade,
+  contraAssinarRetorno,
+  entregarMaterial,
+  atribuirTecnico,
+
+  // 4. Gestor Industrial (Administrador/Macro)
+  visualizarDashboardKpi,
+  crudMaquinas, // Permissão EXCLUSIVA: cadastrar e remover máquinas
 }
 
 // ===== Extensions =====
@@ -33,6 +60,8 @@ extension StatusEquipamentoExtension on StatusEquipamento {
         return 'Manutenção';
       case StatusEquipamento.aguardandoMaterial:
         return 'Aguardando Material';
+      case StatusEquipamento.aguardandoAprovacao:
+        return 'Aguardando Aprovação';
       case StatusEquipamento.indisponivel:
         return 'Indisponível';
     }
@@ -48,6 +77,8 @@ extension StatusEquipamentoExtension on StatusEquipamento {
         return Icons.build;
       case StatusEquipamento.aguardandoMaterial:
         return Icons.inventory_2;
+      case StatusEquipamento.aguardandoAprovacao:
+        return Icons.verified_user_outlined;
       case StatusEquipamento.indisponivel:
         return Icons.cancel;
     }
@@ -63,6 +94,8 @@ extension StatusEquipamentoExtension on StatusEquipamento {
         return AppCores.manutencao;
       case StatusEquipamento.aguardandoMaterial:
         return AppCores.aguardandoMaterial;
+      case StatusEquipamento.aguardandoAprovacao:
+        return AppCores.aguardandoAprovacao;
       case StatusEquipamento.indisponivel:
         return AppCores.indisponivel;
     }
@@ -79,7 +112,7 @@ extension PerfilUsuarioExtension on PerfilUsuario {
       case PerfilUsuario.supervisor:
         return 'Supervisor';
       case PerfilUsuario.gestor:
-        return 'Gestor';
+        return 'Gestor Industrial';
     }
   }
 
@@ -92,7 +125,42 @@ extension PerfilUsuarioExtension on PerfilUsuario {
       case PerfilUsuario.supervisor:
         return Icons.supervisor_account;
       case PerfilUsuario.gestor:
-        return Icons.dashboard;
+        return Icons.admin_panel_settings;
+    }
+  }
+
+  /// Matriz RBAC com as permissões atribuídas a cada cargo
+  Set<AppPermission> get permissions {
+    switch (this) {
+      case PerfilUsuario.operador:
+        return {
+          AppPermission.visualizarMaquinas,
+          AppPermission.registrarParadaCritica,
+          AppPermission.solicitarAtendimento,
+        };
+
+      case PerfilUsuario.tecnico:
+        return {
+          AppPermission.visualizarMaquinas,
+          AppPermission.assumirManutencao,
+          AppPermission.pausarAguardandoMaterial,
+          AppPermission.finalizarComLaudo,
+        };
+
+      case PerfilUsuario.supervisor:
+        return {
+          AppPermission.visualizarMaquinas,
+          AppPermission.filtrosAvancadosIndisponibilidade,
+          AppPermission.reatribuirPrioridade,
+          AppPermission.contraAssinarRetorno,
+          AppPermission.entregarMaterial,
+          AppPermission.atribuirTecnico,
+          AppPermission.visualizarDashboardKpi,
+        };
+
+      case PerfilUsuario.gestor:
+        // Acesso irrestrito incluindo CRUD exclusivo de máquinas
+        return AppPermission.values.toSet();
     }
   }
 }
@@ -104,8 +172,42 @@ extension StatusOcorrenciaExtension on StatusOcorrencia {
         return 'Aberta';
       case StatusOcorrencia.emAndamento:
         return 'Em Andamento';
+      case StatusOcorrencia.aguardandoMaterial:
+        return 'Aguardando Material';
+      case StatusOcorrencia.aguardandoAprovacao:
+        return 'Aguardando Aprovação';
       case StatusOcorrencia.finalizada:
         return 'Finalizada';
+    }
+  }
+
+  Color get cor {
+    switch (this) {
+      case StatusOcorrencia.aberta:
+        return Colors.orange;
+      case StatusOcorrencia.emAndamento:
+        return Colors.blue;
+      case StatusOcorrencia.aguardandoMaterial:
+        return Colors.amber;
+      case StatusOcorrencia.aguardandoAprovacao:
+        return Colors.purple;
+      case StatusOcorrencia.finalizada:
+        return Colors.green;
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case StatusOcorrencia.aberta:
+        return Icons.error_outline;
+      case StatusOcorrencia.emAndamento:
+        return Icons.play_circle;
+      case StatusOcorrencia.aguardandoMaterial:
+        return Icons.inventory_2_outlined;
+      case StatusOcorrencia.aguardandoAprovacao:
+        return Icons.verified_user_outlined;
+      case StatusOcorrencia.finalizada:
+        return Icons.check_circle;
     }
   }
 }
@@ -134,5 +236,6 @@ class AppCores {
   static const Color parada = Color(0xFFFF5722);
   static const Color manutencao = Color(0xFF2196F3);
   static const Color aguardandoMaterial = Color(0xFFFF9800);
-  static const Color indisponivel = Color(0xFF9C27B0);
+  static const Color aguardandoAprovacao = Color(0xFF9C27B0);
+  static const Color indisponivel = Color(0xFF607D8B);
 }

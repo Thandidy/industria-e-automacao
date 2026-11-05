@@ -460,6 +460,10 @@ class _StatusBadgeOcorrencia extends StatelessWidget {
         return Colors.orange;
       case StatusOcorrencia.emAndamento:
         return Colors.blue;
+      case StatusOcorrencia.aguardandoMaterial:
+        return Colors.amber;
+      case StatusOcorrencia.aguardandoAprovacao:
+        return Colors.purple;
       case StatusOcorrencia.finalizada:
         return Colors.green;
     }

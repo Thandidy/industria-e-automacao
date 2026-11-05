@@ -1,6 +1,5 @@
 // lib/models/usuario.dart
 
-
 import '../utils/constants.dart';
 
 class Usuario {
@@ -18,6 +17,18 @@ class Usuario {
     required this.perfil,
   });
 
+  /// Verifica se o usuário possui a permissão especificada
+  bool can(AppPermission permission) => perfil.permissions.contains(permission);
+
+  /// Verifica se possui qualquer uma das permissões fornecidas
+  bool canAny(Iterable<AppPermission> permissions) => permissions.any(can);
+
+  /// Atalhos de papéis
+  bool get ehOperador => perfil == PerfilUsuario.operador;
+  bool get ehTecnico => perfil == PerfilUsuario.tecnico;
+  bool get ehSupervisor => perfil == PerfilUsuario.supervisor;
+  bool get ehGestor => perfil == PerfilUsuario.gestor;
+
   static PerfilUsuario getPerfilFromIndex(int index) {
     switch (index) {
       case 0:
@@ -34,16 +45,7 @@ class Usuario {
   }
 
   static String perfilToString(PerfilUsuario perfil) {
-    switch (perfil) {
-      case PerfilUsuario.operador:
-        return 'Operador';
-      case PerfilUsuario.tecnico:
-        return 'Técnico';
-      case PerfilUsuario.supervisor:
-        return 'Supervisor';
-      case PerfilUsuario.gestor:
-        return 'Gestor';
-    }
+    return perfil.nome;
   }
 
   Map<String, dynamic> toJson() {

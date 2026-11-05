@@ -2,11 +2,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../utils/constants.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/snackbar_helper.dart';
+import 'solicitar_acesso_view.dart';
 
-/// Tela de login com campos de usuário/senha e seleção rápida de perfil.
+/// Tela de login com autenticação no Firestore para usuários aprovados via WhatsApp.
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
 
@@ -18,7 +18,6 @@ class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _userIdController = TextEditingController();
   final _passwordController = TextEditingController();
-  PerfilUsuario _selectedPerfil = PerfilUsuario.operador;
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -39,7 +38,7 @@ class _LoginViewState extends State<LoginView> {
       final password = _passwordController.text;
 
       final authProvider = context.read<AuthProvider>();
-      await authProvider.login(userId, password, _selectedPerfil);
+      await authProvider.login(userId, password);
 
       if (!mounted) return;
 
@@ -54,34 +53,7 @@ class _LoginViewState extends State<LoginView> {
       if (!mounted) return;
       SnackbarHelper.showSnackbar(
         context: context,
-        message: 'Falha no login: ${e.toString()}',
-        isError: true,
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _handleLoginRapido(PerfilUsuario perfil) async {
-    setState(() => _isLoading = true);
-    try {
-      final authProvider = context.read<AuthProvider>();
-      await authProvider.loginRapido(perfil);
-
-      if (!mounted) return;
-
-      SnackbarHelper.showSnackbar(
-        context: context,
-        message: 'Conectado como ${perfil.nome} (${authProvider.nome})',
-        isSuccess: true,
-      );
-
-      Navigator.of(context).pushReplacementNamed('/dashboard');
-    } catch (e) {
-      if (!mounted) return;
-      SnackbarHelper.showSnackbar(
-        context: context,
-        message: 'Falha ao acessar: ${e.toString()}',
+        message: e.toString().replaceFirst('Exception: ', ''),
         isError: true,
       );
     } finally {
@@ -121,7 +93,7 @@ class _LoginViewState extends State<LoginView> {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'Indústria & Manutenção',
+                      'SIGE - Indústria & Manutenção',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
@@ -137,17 +109,18 @@ class _LoginViewState extends State<LoginView> {
                     ),
                     const SizedBox(height: 32),
 
-                    // Campo de Usuário
+                    // Campo de Usuário / E-mail
                     TextFormField(
                       controller: _userIdController,
                       decoration: const InputDecoration(
-                        labelText: 'Matrícula / ID de Usuário',
-                        prefixIcon: Icon(Icons.badge_outlined),
+                        labelText: 'E-mail ou Usuário',
+                        hintText: 'ex: teste@gmail.com ou teste',
+                        prefixIcon: Icon(Icons.person_outline),
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'Informe o ID de usuário';
+                          return 'Informe seu e-mail ou nome de usuário';
                         }
                         return null;
                       },
@@ -182,34 +155,6 @@ class _LoginViewState extends State<LoginView> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 16),
-
-                    // Seleção de Perfil
-                    DropdownButtonFormField<PerfilUsuario>(
-                      initialValue: _selectedPerfil,
-                      decoration: const InputDecoration(
-                        labelText: 'Perfil de Acesso',
-                        prefixIcon: Icon(Icons.manage_accounts_outlined),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: PerfilUsuario.values.map((perfil) {
-                        return DropdownMenuItem(
-                          value: perfil,
-                          child: Row(
-                            children: [
-                              Icon(perfil.icon, size: 20, color: _perfilColor(perfil)),
-                              const SizedBox(width: 8),
-                              Text(perfil.nome),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (novo) {
-                        if (novo != null) {
-                          setState(() => _selectedPerfil = novo);
-                        }
-                      },
-                    ),
                     const SizedBox(height: 24),
 
                     // Botão Entrar
@@ -232,39 +177,21 @@ class _LoginViewState extends State<LoginView> {
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                     ),
-                    const SizedBox(height: 36),
+                    const SizedBox(height: 16),
 
-                    // Divisor
-                    Row(
-                      children: [
-                        const Expanded(child: Divider()),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text(
-                            'OU ACESSO RÁPIDO DEMO',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              letterSpacing: 1.2,
-                              fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                        const Expanded(child: Divider()),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Botões de Demonstração
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      alignment: WrapAlignment.center,
-                      children: PerfilUsuario.values.map((perfil) {
-                        return _DemoButton(
-                          perfil: perfil,
-                          onPressed: _isLoading ? null : () => _handleLoginRapido(perfil),
-                        );
-                      }).toList(),
+                    // Botão para solicitar cadastro / tentativa de login
+                    TextButton.icon(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const SolicitarAcessoView(),
+                                ),
+                              );
+                            },
+                      icon: const Icon(Icons.person_add_alt_outlined),
+                      label: const Text('Não possui acesso? Solicitar cadastro'),
                     ),
                   ],
                 ),
@@ -274,62 +201,5 @@ class _LoginViewState extends State<LoginView> {
         ),
       ),
     );
-  }
-
-  static Color _perfilColor(PerfilUsuario perfil) {
-    switch (perfil) {
-      case PerfilUsuario.operador:
-        return Colors.blue;
-      case PerfilUsuario.tecnico:
-        return Colors.green;
-      case PerfilUsuario.supervisor:
-        return Colors.orange;
-      case PerfilUsuario.gestor:
-        return Colors.purple;
-    }
-  }
-}
-
-class _DemoButton extends StatelessWidget {
-  final PerfilUsuario perfil;
-  final VoidCallback? onPressed;
-
-  const _DemoButton({
-    required this.perfil,
-    this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cor = _perfilColor(perfil);
-
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(perfil.icon, size: 18, color: cor),
-      label: Text(
-        perfil.nome,
-        style: TextStyle(color: cor, fontWeight: FontWeight.w600),
-      ),
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(color: cor.withValues(alpha: 0.6)),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
-    );
-  }
-
-  static Color _perfilColor(PerfilUsuario perfil) {
-    switch (perfil) {
-      case PerfilUsuario.operador:
-        return Colors.blue;
-      case PerfilUsuario.tecnico:
-        return Colors.green;
-      case PerfilUsuario.supervisor:
-        return Colors.orange;
-      case PerfilUsuario.gestor:
-        return Colors.purple;
-    }
   }
 }

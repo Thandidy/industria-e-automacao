@@ -397,6 +397,10 @@ class _ListaOcorrencias extends StatelessWidget {
         return Colors.orange;
       case StatusOcorrencia.emAndamento:
         return Colors.blue;
+      case StatusOcorrencia.aguardandoMaterial:
+        return Colors.amber;
+      case StatusOcorrencia.aguardandoAprovacao:
+        return Colors.purple;
       case StatusOcorrencia.finalizada:
         return Colors.green;
     }
@@ -408,6 +412,10 @@ class _ListaOcorrencias extends StatelessWidget {
         return Icons.error_outline;
       case StatusOcorrencia.emAndamento:
         return Icons.play_circle;
+      case StatusOcorrencia.aguardandoMaterial:
+        return Icons.inventory_2_outlined;
+      case StatusOcorrencia.aguardandoAprovacao:
+        return Icons.verified_user_outlined;
       case StatusOcorrencia.finalizada:
         return Icons.check_circle;
     }
