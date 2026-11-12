@@ -8,6 +8,7 @@ class Usuario {
   final String email;
   final String senha;
   final PerfilUsuario perfil;
+  final String? telefone;
 
   Usuario({
     required this.id,
@@ -15,6 +16,7 @@ class Usuario {
     required this.email,
     required this.senha,
     required this.perfil,
+    this.telefone,
   });
 
   /// Verifica se o usuário possui a permissão especificada
@@ -54,16 +56,34 @@ class Usuario {
       'nome': nome,
       'email': email,
       'perfil': perfil.index,
+      'telefone': telefone,
     };
   }
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
+    PerfilUsuario perfil;
+    if (json['perfil'] is int) {
+      final idx = json['perfil'] as int;
+      perfil = (idx >= 0 && idx < PerfilUsuario.values.length)
+          ? PerfilUsuario.values[idx]
+          : PerfilUsuario.operador;
+    } else if (json['perfil'] is String) {
+      final str = (json['perfil'] as String).toLowerCase().trim();
+      perfil = PerfilUsuario.values.firstWhere(
+        (p) => p.name.toLowerCase() == str,
+        orElse: () => PerfilUsuario.operador,
+      );
+    } else {
+      perfil = PerfilUsuario.operador;
+    }
+
     return Usuario(
       id: json['id'] ?? '',
-      nome: json['nome'] ?? '',
+      nome: json['nome'] ?? json['nomeFuncionario'] ?? '',
       email: json['email'] ?? '',
       senha: json['senha'] ?? '',
-      perfil: PerfilUsuario.values[json['perfil'] ?? 0],
+      perfil: perfil,
+      telefone: json['telefone']?.toString(),
     );
   }
 }

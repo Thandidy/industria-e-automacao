@@ -19,6 +19,7 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
   final _formKey = GlobalKey<FormState>();
   final _nomeController = TextEditingController();
   final _emailController = TextEditingController();
+  final _telefoneController = TextEditingController();
   final _senhaController = TextEditingController();
   final _confirmarSenhaController = TextEditingController();
 
@@ -34,6 +35,7 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
   void dispose() {
     _nomeController.dispose();
     _emailController.dispose();
+    _telefoneController.dispose();
     _senhaController.dispose();
     _confirmarSenhaController.dispose();
     super.dispose();
@@ -60,6 +62,7 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
     try {
       final nome = _nomeController.text.trim();
       final email = _emailController.text.trim();
+      final telefone = _telefoneController.text.trim();
       final senha = _senhaController.text;
       final perfilStr = _perfilParaString(_selectedPerfil);
 
@@ -68,6 +71,7 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
         'nome': nome,
         'nomeFuncionario': nome,
         'email': email,
+        'telefone': telefone,
         'senha': senha,
         'perfil': perfilStr,
         'status': 'pendente',
@@ -195,6 +199,20 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
               }
               return null;
             },
+          ),
+          const SizedBox(height: 16),
+
+          // Telefone / WhatsApp (Opcional)
+          TextFormField(
+            controller: _telefoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Telefone / WhatsApp (Opcional)',
+              hintText: 'Ex: 11999998888',
+              helperText: 'Técnicos e Supervisores recebem alertas de máquinas via WhatsApp',
+              prefixIcon: Icon(Icons.phone_android),
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 16),
 

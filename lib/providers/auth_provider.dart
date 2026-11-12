@@ -10,12 +10,14 @@ class AuthProvider extends ChangeNotifier {
   String? _userId;
   String? _nome;
   String? _email;
+  String? _telefone;
   bool _autenticado = false;
 
   PerfilUsuario? get perfil => _perfil;
   String? get userId => _userId;
   String? get nome => _nome;
   String? get email => _email;
+  String? get telefone => _telefone;
   bool get autenticado => _autenticado;
 
   Usuario? get usuario => _autenticado && _perfil != null
@@ -25,6 +27,7 @@ class AuthProvider extends ChangeNotifier {
           email: _email ?? '${_userId ?? "usuario"}@empresa.com',
           senha: '',
           perfil: _perfil!,
+          telefone: _telefone,
         )
       : null;
 
@@ -98,7 +101,22 @@ class AuthProvider extends ChangeNotifier {
         }
       }
 
-      // 1.5 Se não encontrou, busca por ID direto do documento
+      // 1.5 Busca por telefone
+      if (usuarioDoc == null) {
+        final phoneClean = termo.replaceAll(RegExp(r'\D'), '');
+        if (phoneClean.isNotEmpty) {
+          final phoneQuery = await firestore
+              .collection('usuarios')
+              .where('telefone', isEqualTo: termo)
+              .limit(1)
+              .get();
+          if (phoneQuery.docs.isNotEmpty) {
+            usuarioDoc = phoneQuery.docs.first;
+          }
+        }
+      }
+
+      // 1.6 Se não encontrou, busca por ID direto do documento
       if (usuarioDoc == null) {
         final docById = await firestore.collection('usuarios').doc(termo).get();
         if (docById.exists) {
@@ -106,17 +124,22 @@ class AuthProvider extends ChangeNotifier {
         }
       }
 
-      // 1.6 Fallback resiliente: varredura case-insensitive na coleção 'usuarios'
+      // 1.7 Fallback resiliente: varredura case-insensitive na coleção 'usuarios'
       if (usuarioDoc == null) {
         final todosUsuarios = await firestore.collection('usuarios').get();
         for (final doc in todosUsuarios.docs) {
           final data = doc.data();
           final emailDoc = (data['email'] ?? '').toString().trim().toLowerCase();
           final nomeDoc = (data['nome'] ?? data['nomeFuncionario'] ?? '').toString().trim().toLowerCase();
+          final telDoc = (data['telefone'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
           final idDoc = doc.id.toLowerCase();
           final termoLower = termo.toLowerCase();
+          final termoDigits = termo.replaceAll(RegExp(r'\D'), '');
 
-          if (emailDoc == termoLower || nomeDoc == termoLower || idDoc == termoLower) {
+          if (emailDoc == termoLower ||
+              nomeDoc == termoLower ||
+              idDoc == termoLower ||
+              (termoDigits.isNotEmpty && telDoc.endsWith(termoDigits))) {
             usuarioDoc = doc;
             break;
           }
@@ -151,6 +174,7 @@ class AuthProvider extends ChangeNotifier {
         _perfil = userData['perfil'] != null
             ? _converterPerfil(userData['perfil'])
             : (perfilSelecionado ?? PerfilUsuario.operador);
+        _telefone = userData['telefone']?.toString();
         _autenticado = true;
 
         // Atualiza último login no Firestore como Timestamp

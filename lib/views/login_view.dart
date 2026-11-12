@@ -109,12 +109,12 @@ class _LoginViewState extends State<LoginView> {
                     ),
                     const SizedBox(height: 32),
 
-                    // Campo de Usuário / E-mail
+                    // Campo de Usuário / E-mail / Telefone
                     TextFormField(
                       controller: _userIdController,
                       decoration: const InputDecoration(
-                        labelText: 'E-mail ou Usuário',
-                        hintText: 'ex: teste@gmail.com ou teste',
+                        labelText: 'E-mail, Usuário ou Telefone',
+                        hintText: 'ex: teste@gmail.com, teste ou 11999998888',
                         prefixIcon: Icon(Icons.person_outline),
                         border: OutlineInputBorder(),
                       ),
