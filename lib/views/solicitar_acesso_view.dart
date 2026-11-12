@@ -209,7 +209,7 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
             decoration: const InputDecoration(
               labelText: 'Telefone / WhatsApp (Opcional)',
               hintText: 'Ex: 11999998888',
-              helperText: 'Técnicos e Supervisores recebem alertas de máquinas via WhatsApp',
+              helperText: 'Você receberá uma mensagem no WhatsApp quando seu acesso for aprovado',
               prefixIcon: Icon(Icons.phone_android),
               border: OutlineInputBorder(),
             ),

@@ -535,8 +535,14 @@ class _ListaOcorrencias extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final equipamentosPorId = context.watch<OcorrenciaProvider>().equipamentosPorId;
+
     return Column(
       children: ocorrencias.map((ocorrencia) {
+        final eq = equipamentosPorId[ocorrencia.equipamentoId];
+        final nomeEquipamento = eq?.nome ?? 'Máquina';
+        final localizacaoEquipamento = eq?.localizacao ?? 'Parque Industrial';
+
         final estaEmAndamento = ocorrencia.status == StatusOcorrencia.emAndamento;
         final estaAguardandoMaterial = ocorrencia.status == StatusOcorrencia.aguardandoMaterial;
         final estaFinalizada = ocorrencia.status == StatusOcorrencia.finalizada;
@@ -578,44 +584,95 @@ class _ListaOcorrencias extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            ocorrencia.equipamentoTag,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        if (ehCritica)
+                    Expanded(
+                      child: Row(
+                        children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.red.withValues(alpha: 0.15),
+                              color: Theme.of(context).colorScheme.primaryContainer,
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.redAccent),
                             ),
-                            child: const Text('CRÍTICA', style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                            child: Text(
+                              ocorrencia.equipamentoTag,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
                           ),
-                      ],
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              nomeEquipamento,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (ehCritica)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.redAccent),
+                              ),
+                              child: const Text('CRÍTICA', style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ),
+                        ],
+                      ),
                     ),
                     _buildStatusChip(ocorrencia),
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  ocorrencia.motivo,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  ocorrencia.descricao,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade400),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade400.withValues(alpha: 0.4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.redAccent),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Motivo da Parada:',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              ocorrencia.motivo,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (ocorrencia.descricao.isNotEmpty && ocorrencia.descricao != ocorrencia.motivo) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          ocorrencia.descricao,
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.location_on, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          Text(
+                            localizacaoEquipamento,
+                            style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(

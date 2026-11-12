@@ -72,3 +72,16 @@ Este documento orienta a implementação completa das novas regras de negócio e
 - [x] **4.3. Polimento de UI/UX e Edição de Ativos**
   - Atualização do `theme.dart`, `custom_app_bar.dart`, `equipamento_card.dart`, `status_badge.dart` e tabelas de ocorrências para padrão industrial premium, com alto contraste, fontes nítidas e feedback visual claro.
   - Botão e modal de "Editar Máquina" implementado para alterar TAG/Código, Nome e Localização diretamente no Firestore.
+
+---
+
+## 5. Integração com WhatsApp Bot (`sige-whatsapp-bot`)
+- [x] **5.1. Compatibilidade entre Módulos JS:**
+  - Migração completa de `mensagens.js` para ES Modules (`import`/`export`), em total conformidade com `package.json` (`"type": "module"`) e `index.js`.
+- [x] **5.2. Notificação Direta ao Novo Usuário Aprovado:**
+  - Quando o gestor aprova uma solicitação de login no WhatsApp, o bot envia automaticamente uma mensagem de boas-vindas ao WhatsApp do colaborador informando login, perfil e liberação de acesso.
+- [x] **5.3. Notificação Específica de Parada de Máquina e Motivo para Técnicos:**
+  - O bot notifica individualmente a equipe técnica com nome da máquina, TAG, localização física e o motivo da parada.
+  - No app Flutter, cards e painel técnico destacam o motivo exato da parada.
+- [x] **5.4. Notificação de Suprimentos, Designação e Reparo Finalizado:**
+  - Suprimentos solicitados enviados para supervisores; designação exclusiva enviada para o técnico indicado; finalização de reparo enviada para chefia, supervisores e gestores.
