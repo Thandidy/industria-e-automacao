@@ -168,7 +168,11 @@ class _FilterSection extends StatelessWidget {
                   items: const [
                     DropdownMenuItem<StatusOcorrencia?>(
                       value: null,
-                      child: Text('Todos'),
+                      child: Text('Todos os Status'),
+                    ),
+                    DropdownMenuItem<StatusOcorrencia?>(
+                      value: StatusOcorrencia.aguardandoAprovacao,
+                      child: Text('Aguardando Aprovação'),
                     ),
                     DropdownMenuItem<StatusOcorrencia?>(
                       value: StatusOcorrencia.aberta,
@@ -177,6 +181,10 @@ class _FilterSection extends StatelessWidget {
                     DropdownMenuItem<StatusOcorrencia?>(
                       value: StatusOcorrencia.emAndamento,
                       child: Text('Em Andamento'),
+                    ),
+                    DropdownMenuItem<StatusOcorrencia?>(
+                      value: StatusOcorrencia.aguardandoMaterial,
+                      child: Text('Aguardando Material'),
                     ),
                     DropdownMenuItem<StatusOcorrencia?>(
                       value: StatusOcorrencia.finalizada,
@@ -371,6 +379,36 @@ class _OcorrenciaRow extends StatelessWidget {
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ),
+                      if (ocorrencia.ehCritica) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.red, width: 0.8),
+                          ),
+                          child: const Text(
+                            'CRÍTICA',
+                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.red),
+                          ),
+                        ),
+                      ],
+                      if (ocorrencia.tecnicoDesignado != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.teal, width: 0.8),
+                          ),
+                          child: Text(
+                            'Designado: ${ocorrencia.tecnicoDesignado}',
+                            style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.teal),
+                          ),
+                        ),
+                      ],
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(

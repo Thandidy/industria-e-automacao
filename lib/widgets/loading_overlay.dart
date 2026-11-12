@@ -19,7 +19,7 @@ class LoadingOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        if (child != null) child!,
+        ?child,
         if (isLoading)
           Container(
             color: Colors.black.withValues(alpha: 0.5),

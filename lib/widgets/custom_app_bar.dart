@@ -63,10 +63,11 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                usuario!.perfil.nome,
+                usuario!.perfil.nome.toUpperCase(),
                 style: const TextStyle(
                   fontSize: 10,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
                   color: Colors.white,
                 ),
               ),

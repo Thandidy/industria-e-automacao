@@ -104,12 +104,22 @@ class SearchFilterBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 _StatusFilterChip(
-                  label: 'Resíduo',
+                  label: 'Aguardando Material',
                   isSelected: statusFilters.contains('aguardandoMaterial'),
                   onTap: () => onStatusFiltersChanged(
                     statusFilters.contains('aguardandoMaterial')
                         ? ['TODOS']
                         : [...statusFilters.where((s) => s != 'TODOS'), 'aguardandoMaterial'],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _StatusFilterChip(
+                  label: 'Aguardando Aprovação',
+                  isSelected: statusFilters.contains('aguardandoAprovacao'),
+                  onTap: () => onStatusFiltersChanged(
+                    statusFilters.contains('aguardandoAprovacao')
+                        ? ['TODOS']
+                        : [...statusFilters.where((s) => s != 'TODOS'), 'aguardandoAprovacao'],
                   ),
                 ),
               ],

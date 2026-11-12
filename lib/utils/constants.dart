@@ -78,7 +78,7 @@ extension StatusEquipamentoExtension on StatusEquipamento {
       case StatusEquipamento.aguardandoMaterial:
         return Icons.inventory_2;
       case StatusEquipamento.aguardandoAprovacao:
-        return Icons.verified_user_outlined;
+        return Icons.pending_actions;
       case StatusEquipamento.indisponivel:
         return Icons.cancel;
     }
@@ -159,8 +159,12 @@ extension PerfilUsuarioExtension on PerfilUsuario {
         };
 
       case PerfilUsuario.gestor:
-        // Acesso irrestrito incluindo CRUD exclusivo de máquinas
-        return AppPermission.values.toSet();
+        // Gestor Industrial: acesso exclusivo a Relatórios & KPIs, Gerenciamento de Máquinas (CRUD) e visualização
+        return {
+          AppPermission.visualizarMaquinas,
+          AppPermission.visualizarDashboardKpi,
+          AppPermission.crudMaquinas,
+        };
     }
   }
 }

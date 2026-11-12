@@ -280,8 +280,6 @@ class AuthProvider extends ChangeNotifier {
 
   bool temAcesso(PerfilUsuario perfilNecessario) {
     if (!_autenticado) return false;
-    // Gestor tem acesso a tudo
-    if (_perfil == PerfilUsuario.gestor) return true;
     return _perfil == perfilNecessario;
   }
 }

@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../utils/constants.dart';
 
-
 class Equipamento {
   final String id;
   final String tag;
   final String nome;
   final String localizacao;
   final StatusEquipamento status;
+  final bool grauCritico;
+  final bool aprovadaManutencao;
+  final String? tecnicoDesignado;
+  final String? tecnicoDesignadoId;
   final DateTime ultimoAtualizacao;
   final DateTime? ultimaParada;
   final String? motivoParada;
@@ -25,6 +28,10 @@ class Equipamento {
     required this.nome,
     required this.localizacao,
     required this.status,
+    this.grauCritico = false,
+    this.aprovadaManutencao = false,
+    this.tecnicoDesignado,
+    this.tecnicoDesignadoId,
     required this.ultimoAtualizacao,
     this.ultimaParada,
     this.motivoParada,
@@ -41,6 +48,10 @@ class Equipamento {
       nome: 'Equipamento $id',
       localizacao: 'Setor 1',
       status: StatusEquipamento.operando,
+      grauCritico: false,
+      aprovadaManutencao: false,
+      tecnicoDesignado: null,
+      tecnicoDesignadoId: null,
       ultimoAtualizacao: DateTime.now(),
       ultimaParada: null,
       motivoParada: null,
@@ -57,6 +68,10 @@ class Equipamento {
     String? nome,
     String? localizacao,
     StatusEquipamento? status,
+    bool? grauCritico,
+    bool? aprovadaManutencao,
+    String? tecnicoDesignado,
+    String? tecnicoDesignadoId,
     DateTime? ultimoAtualizacao,
     DateTime? ultimaParada,
     String? motivoParada,
@@ -71,6 +86,10 @@ class Equipamento {
       nome: nome ?? this.nome,
       localizacao: localizacao ?? this.localizacao,
       status: status ?? this.status,
+      grauCritico: grauCritico ?? this.grauCritico,
+      aprovadaManutencao: aprovadaManutencao ?? this.aprovadaManutencao,
+      tecnicoDesignado: tecnicoDesignado ?? this.tecnicoDesignado,
+      tecnicoDesignadoId: tecnicoDesignadoId ?? this.tecnicoDesignadoId,
       ultimoAtualizacao: ultimoAtualizacao ?? this.ultimoAtualizacao,
       ultimaParada: ultimaParada ?? this.ultimaParada,
       motivoParada: motivoParada ?? this.motivoParada,
@@ -81,9 +100,47 @@ class Equipamento {
     );
   }
 
-  String get statusNome => status.nome;
-  IconData get statusIcon => status.icon;
-  Color get statusColor => status.cor(status);
+  /// Nome formatado do status com destaque para o estado crítico
+  String get statusNome {
+    // Estado X: Parada crítica pendente de aprovação do supervisor
+    if (status == StatusEquipamento.aguardandoAprovacao || (grauCritico && !aprovadaManutencao && status == StatusEquipamento.parada)) {
+      return 'Aguardando Aprovação';
+    }
+    // Estado Y: Parada crítica já aprovada com técnico designado
+    if (grauCritico && aprovadaManutencao && status == StatusEquipamento.parada) {
+      if (tecnicoDesignado != null && tecnicoDesignado!.isNotEmpty) {
+        return 'Aprovada ($tecnicoDesignado)';
+      }
+      return 'Aprovada p/ Manutenção';
+    }
+    return status.nome;
+  }
+
+  /// Ícone dinâmico: Estado X (precisa de aprovação) vs Estado Y (aprovada para manutenção)
+  IconData get statusIcon {
+    // Estado X: Precisa de aprovação pelo supervisor para manutenção
+    if (status == StatusEquipamento.aguardandoAprovacao || (grauCritico && !aprovadaManutencao && status == StatusEquipamento.parada)) {
+      return Icons.pending_actions; // Ícone X: Aguardando aprovação
+    }
+    // Estado Y: Aprovada para manutenção com técnico designado
+    if (grauCritico && aprovadaManutencao && status == StatusEquipamento.parada) {
+      return Icons.assignment_turned_in; // Ícone Y: Aprovada com técnico designado
+    }
+    return status.icon;
+  }
+
+  /// Cor dinâmica de status
+  Color get statusColor {
+    // Estado X: Alerta em cor âmbar/roxo
+    if (status == StatusEquipamento.aguardandoAprovacao || (grauCritico && !aprovadaManutencao && status == StatusEquipamento.parada)) {
+      return AppCores.aguardandoAprovacao;
+    }
+    // Estado Y: Destaque positivo em ciano/teal para aprovação concedida
+    if (grauCritico && aprovadaManutencao && status == StatusEquipamento.parada) {
+      return Colors.tealAccent.shade700;
+    }
+    return status.cor(status);
+  }
 
   String get formatoUltimaAtualizacao =>
       DateFormat('dd/MM/yyyy HH:mm').format(ultimoAtualizacao);
@@ -105,6 +162,10 @@ class Equipamento {
       'nome': nome,
       'localizacao': localizacao,
       'status': status.index,
+      'grauCritico': grauCritico,
+      'aprovadaManutencao': aprovadaManutencao,
+      'tecnicoDesignado': tecnicoDesignado,
+      'tecnicoDesignadoId': tecnicoDesignadoId,
       'ultimoAtualizacao': ultimoAtualizacao.toIso8601String(),
       'ultimaParada': ultimaParada?.toIso8601String(),
       'motivoParada': motivoParada,
@@ -122,6 +183,10 @@ class Equipamento {
       nome: json['nome'] ?? '',
       localizacao: json['localizacao'] ?? '',
       status: StatusEquipamento.values[json['status'] ?? 0],
+      grauCritico: json['grauCritico'] == true,
+      aprovadaManutencao: json['aprovadaManutencao'] == true,
+      tecnicoDesignado: json['tecnicoDesignado']?.toString(),
+      tecnicoDesignadoId: json['tecnicoDesignadoId']?.toString(),
       ultimoAtualizacao: DateTime.parse(json['ultimoAtualizacao'] ?? DateTime.now().toIso8601String()),
       ultimaParada: json['ultimaParada'] != null ? DateTime.parse(json['ultimaParada']) : null,
       motivoParada: json['motivoParada'],

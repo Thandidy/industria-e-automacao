@@ -58,6 +58,10 @@ class OcorrenciaProvider extends ChangeNotifier {
           nome: nome,
           localizacao: localizacao,
           status: _parseStatus(data['status']?.toString()),
+          grauCritico: data['grauCritico'] == true,
+          aprovadaManutencao: data['aprovadaManutencao'] == true,
+          tecnicoDesignado: data['tecnicoDesignado']?.toString(),
+          tecnicoDesignadoId: data['tecnicoDesignadoId']?.toString(),
           ultimoAtualizacao: ultimoAtualizacao,
           ultimaParada: ultimaParada,
           motivoParada: data['motivoParada']?.toString(),
@@ -125,6 +129,9 @@ class OcorrenciaProvider extends ChangeNotifier {
           descricao: (data['descricao'] ?? '').toString(),
           prioridade: (data['prioridade'] ?? 'Média').toString(),
           status: _parseStatusOcorrencia(data['status']),
+          aprovadaManutencao: data['aprovadaManutencao'] == true,
+          tecnicoDesignado: data['tecnicoDesignado']?.toString(),
+          tecnicoDesignadoId: data['tecnicoDesignadoId']?.toString(),
           dataAbertura: dataAbertura,
           dataInicio: dataInicio,
           dataFim: dataFim,
@@ -136,7 +143,6 @@ class OcorrenciaProvider extends ChangeNotifier {
         );
       }).toList();
 
-      // Ordenar por dataAbertura decrescente
       _ocorrencias.sort((a, b) => b.dataAbertura.compareTo(a.dataAbertura));
 
       _isLoading = false;
@@ -216,7 +222,12 @@ class OcorrenciaProvider extends ChangeNotifier {
   // 1. AÇÕES DO OPERADOR (Com validações de RBAC e Integridade)
   // =========================================================================
 
-  /// REGRA DE NEGÓCIO: Não deve existir mais de uma parada ativa simultânea para a mesma máquina.
+  /// REGRA DE NEGÓCIO: Operadores podem registrar paradas incluindo críticas.
+  /// Se a parada for de grau crítico:
+  /// - A máquina entra em 'Aguardando Aprovação' (Estado X).
+  /// - Necessita de aprovação do supervisor e designação de técnico antes de ser consertada.
+  /// Se NÃO for crítica (Baixa, Média, Alta):
+  /// - A máquina entra em 'Parada' e qualquer técnico pode livremente arrumar a máquina.
   Future<void> registrarParadaCritica({
     required String equipamentoId,
     required String motivo,
@@ -224,9 +235,10 @@ class OcorrenciaProvider extends ChangeNotifier {
     required Usuario usuario,
   }) async {
     if (!usuario.can(AppPermission.registrarParadaCritica)) {
-      throw Exception('Acesso negado: Perfil não autorizado a registrar paradas críticas.');
+      throw Exception('Acesso negado: Perfil não autorizado a registrar paradas de máquina.');
     }
 
+    // Validação de parada ativa simultânea
     final paradaAtivaExistente = _ocorrencias.any((o) =>
         o.equipamentoId == equipamentoId &&
         (o.status == StatusOcorrencia.aberta ||
@@ -246,22 +258,35 @@ class OcorrenciaProvider extends ChangeNotifier {
     final eq = _equipamentos[eqIndex];
     final agora = DateTime.now();
 
+    final ehCritica = prioridade.toLowerCase().trim() == 'crítica' || prioridade.toLowerCase().trim() == 'critica';
+    final statusEquipamento = ehCritica
+        ? StatusEquipamento.aguardandoAprovacao
+        : StatusEquipamento.parada;
+    final statusOcorrencia = ehCritica
+        ? StatusOcorrencia.aguardandoAprovacao
+        : StatusOcorrencia.aberta;
+
     final novaOcorrencia = Ocorrencia(
       equipamentoId: eq.id,
       equipamentoTag: eq.tag,
       motivo: motivo,
-      descricao: 'Parada crítica registrada no chão de fábrica por ${usuario.nome}.',
+      descricao: ehCritica
+          ? 'Parada Crítica registrada no chão de fábrica por ${usuario.nome}. Necessita de aprovação e designação do Supervisor.'
+          : 'Parada registrada no chão de fábrica por ${usuario.nome}.',
       prioridade: prioridade,
-      status: StatusOcorrencia.aberta,
+      status: statusOcorrencia,
+      aprovadaManutencao: !ehCritica,
       dataAbertura: agora,
       historico: [
         HistoricoItem(
           data: agora,
           tipo: 'abertura',
-          descricao: 'Parada registrada: $motivo (Prioridade: $prioridade)',
+          descricao: ehCritica
+              ? 'Parada Crítica registrada: $motivo. Aguardando aprovação do supervisor.'
+              : 'Parada registrada: $motivo (Prioridade: $prioridade). Liberada para manutenção técnica.',
           por: usuario.nome,
-          statusOcorrencia: StatusOcorrencia.aberta,
-          statusEquipamento: StatusEquipamento.parada,
+          statusOcorrencia: statusOcorrencia,
+          statusEquipamento: statusEquipamento,
         ),
       ],
     );
@@ -274,9 +299,13 @@ class OcorrenciaProvider extends ChangeNotifier {
 
     // Atualizar máquina no Firestore (coleção maquinas)
     await FirebaseFirestore.instance.collection('maquinas').doc(eq.id).update({
-      'status': StatusEquipamento.parada.name,
+      'status': statusEquipamento.name,
       'motivoParada': motivo,
       'responsavel': PerfilUsuario.operador.name,
+      'grauCritico': ehCritica,
+      'aprovadaManutencao': !ehCritica,
+      'tecnicoDesignado': null,
+      'tecnicoDesignadoId': null,
       'ultimaParada': FieldValue.serverTimestamp(),
       'ultimoAtualizacao': FieldValue.serverTimestamp(),
       'numeroParadas': FieldValue.increment(1),
@@ -313,10 +342,204 @@ class OcorrenciaProvider extends ChangeNotifier {
   }
 
   // =========================================================================
-  // 2. AÇÕES DO TÉCNICO DE MANUTENÇÃO (Com validações de RBAC e Laudo)
+  // 2. AÇÕES DO SUPERVISOR (Aprovação Crítica, Atribuição e Suprimento)
   // =========================================================================
 
-  /// Assumir ocorrência aberta -> máquina passa a 'Em Manutenção' com timestamp de início
+  /// Aprovar parada crítica e designar o técnico responsável exclusivo
+  Future<void> aprovarEDesignarTecnico({
+    required String ocorrenciaId,
+    required String tecnicoId,
+    required String tecnicoNome,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.atribuirTecnico)) {
+      throw Exception('Acesso negado: Apenas supervisores podem aprovar manutenções críticas e designar técnicos.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não encontrada.');
+
+    final o = _ocorrencias[index];
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'aprovacao_designacao',
+          descricao: 'Manutenção aprovada pelo Supervisor ${usuario.nome}. Técnico designado: $tecnicoNome.',
+          por: usuario.nome,
+          statusOcorrencia: StatusOcorrencia.aberta,
+          statusEquipamento: StatusEquipamento.parada,
+        ),
+      );
+
+    // Ocorrência passa a estar aprovada para o técnico designado
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'status': StatusOcorrencia.aberta.index,
+      'aprovadaManutencao': true,
+      'tecnicoDesignado': tecnicoNome,
+      'tecnicoDesignadoId': tecnicoId,
+      'tecnicoResponsavel': tecnicoNome,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    // Máquina: Estado Y (Aprovada para manutenção com técnico designado)
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'status': StatusEquipamento.parada.name,
+      'aprovadaManutencao': true,
+      'tecnicoDesignado': tecnicoNome,
+      'tecnicoDesignadoId': tecnicoId,
+      'motivoParada': '${o.motivo} (Aprovado p/ técnico $tecnicoNome)',
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Supervisor entrega o material solicitado pelo técnico
+  Future<void> entregarMaterial({
+    required String ocorrenciaId,
+    required String descricaoEntrega,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.entregarMaterial)) {
+      throw Exception('Acesso negado: Apenas o Supervisor pode registrar entrega de materiais.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não encontrada.');
+
+    final o = _ocorrencias[index];
+    if (o.status != StatusOcorrencia.aguardandoMaterial) {
+      throw Exception('Esta ocorrência não está aguardando material (status atual: ${o.status.nome}).');
+    }
+
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'entrega_material',
+          descricao: 'Material entregue pelo Supervisor ${usuario.nome}: $descricaoEntrega',
+          por: usuario.nome,
+          statusOcorrencia: StatusOcorrencia.emAndamento,
+          statusEquipamento: StatusEquipamento.manutencao,
+        ),
+      );
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'status': StatusOcorrencia.emAndamento.index,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'status': StatusEquipamento.manutencao.name,
+      'motivoParada': 'Material entregue — manutenção retomada',
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Supervisor reatribui a prioridade de uma ocorrência
+  Future<void> reatribuirPrioridade({
+    required String ocorrenciaId,
+    required String novaPrioridade,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.reatribuirPrioridade)) {
+      throw Exception('Acesso negado: Apenas supervisores podem redefinir a prioridade.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não localizada.');
+
+    final o = _ocorrencias[index];
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'prioridade',
+          descricao: 'Prioridade redefinida de "${o.prioridade}" para "$novaPrioridade" por ${usuario.nome}.',
+          por: usuario.nome,
+          statusOcorrencia: o.status,
+        ),
+      );
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'prioridade': novaPrioridade,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+  }
+
+  /// Supervisor contra-assina liberação formal
+  Future<void> contraAssinarRetorno({
+    required String ocorrenciaId,
+    required String parecerSupervisor,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.contraAssinarRetorno)) {
+      throw Exception('Acesso negado: Contra-assinatura reservada para o perfil de Supervisor.');
+    }
+
+    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
+    if (index == -1) throw Exception('Ocorrência não localizada.');
+
+    final o = _ocorrencias[index];
+    final agora = DateTime.now();
+
+    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
+      ..add(
+        HistoricoItem(
+          data: agora,
+          tipo: 'aprovacao',
+          descricao: 'Liberação formal contra-assinada pelo Supervisor: $parecerSupervisor',
+          por: usuario.nome,
+          statusOcorrencia: StatusOcorrencia.finalizada,
+          statusEquipamento: StatusEquipamento.operando,
+        ),
+      );
+
+    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+      'status': StatusOcorrencia.finalizada.index,
+      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'status': StatusEquipamento.operando.name,
+      'motivoParada': null,
+      'grauCritico': false,
+      'aprovadaManutencao': false,
+      'tecnicoDesignado': null,
+      'tecnicoDesignadoId': null,
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Método compatível para atribuir técnico
+  Future<void> atribuirTecnico({
+    required String ocorrenciaId,
+    required String tecnicoId,
+    required String tecnicoNome,
+    required Usuario usuario,
+  }) async {
+    await aprovarEDesignarTecnico(
+      ocorrenciaId: ocorrenciaId,
+      tecnicoId: tecnicoId,
+      tecnicoNome: tecnicoNome,
+      usuario: usuario,
+    );
+  }
+
+  // =========================================================================
+  // 3. AÇÕES DO TÉCNICO DE MANUTENÇÃO (Com validações de RBAC e Exclusividade)
+  // =========================================================================
+
+  /// Assumir / Iniciar atendimento técnico
+  /// REGRA DE NEGÓCIO:
+  /// - Se a máquina for CRÍTICA: necessita de aprovação prévia do supervisor E
+  ///   somente o técnico designado pode começar a manutenção!
+  /// - Se NÃO for crítica: qualquer técnico pode livremente arrumar a máquina.
   Future<void> assumirAtendimento({
     required String ocorrenciaId,
     required Usuario usuario,
@@ -329,7 +552,27 @@ class OcorrenciaProvider extends ChangeNotifier {
     if (index == -1) throw Exception('Ocorrência não encontrada.');
 
     final o = _ocorrencias[index];
-    if (o.status != StatusOcorrencia.aberta && o.status != StatusOcorrencia.aguardandoMaterial) {
+
+    // 1. Validação se a ocorrência é crítica
+    if (o.ehCritica) {
+      if (!o.aprovadaManutencao) {
+        throw Exception('Esta ocorrência é de grau Crítico e ainda necessita de APROVAÇÃO e designação do Supervisor antes de iniciar.');
+      }
+
+      // Validação do técnico designado exclusivo
+      final idBate = o.tecnicoDesignadoId != null && o.tecnicoDesignadoId == usuario.id;
+      final nomeBate = o.tecnicoDesignado != null &&
+          o.tecnicoDesignado!.trim().toLowerCase() == usuario.nome.trim().toLowerCase();
+
+      if (!idBate && !nomeBate) {
+        throw Exception('Acesso restrito: Esta manutenção crítica foi designada exclusivamente para o técnico "${o.tecnicoDesignado ?? 'Designado'}".');
+      }
+    }
+
+    // 2. Validação de status para início
+    if (o.status != StatusOcorrencia.aberta &&
+        o.status != StatusOcorrencia.aguardandoAprovacao &&
+        o.status != StatusOcorrencia.aguardandoMaterial) {
       throw Exception('Esta ocorrência não pode ser assumida no status atual (${o.status.nome}).');
     }
 
@@ -339,7 +582,7 @@ class OcorrenciaProvider extends ChangeNotifier {
         HistoricoItem(
           data: agora,
           tipo: 'inicio',
-          descricao: 'Atendimento assumido pelo técnico ${usuario.nome}.',
+          descricao: 'Atendimento de manutenção iniciado pelo técnico ${usuario.nome}.',
           por: usuario.nome,
           statusOcorrencia: StatusOcorrencia.emAndamento,
           statusEquipamento: StatusEquipamento.manutencao,
@@ -399,8 +642,8 @@ class OcorrenciaProvider extends ChangeNotifier {
     });
   }
 
-  /// REGRA DE NEGÓCIO: Uma máquina em manutenção aberta NÃO PODE voltar a operar
-  /// sem o laudo de finalização técnico detalhado.
+  /// Finalizar atendimento com laudo técnico detalhado
+  /// Após receber os materiais ou concluir os reparos, a máquina volta a Operando!
   Future<void> finalizarAtendimentoComLaudo({
     required String ocorrenciaId,
     required String laudoTecnico,
@@ -421,37 +664,34 @@ class OcorrenciaProvider extends ChangeNotifier {
     final o = _ocorrencias[index];
     final agora = DateTime.now();
 
-    final ehCritica = o.prioridade == 'Crítica';
-    final novoStatusEq = ehCritica
-        ? StatusEquipamento.aguardandoAprovacao
-        : StatusEquipamento.operando;
-    final novoStatusOc = ehCritica
-        ? StatusOcorrencia.aguardandoAprovacao
-        : StatusOcorrencia.finalizada;
-
     final historicoAtualizado = List<HistoricoItem>.from(o.historico)
       ..add(
         HistoricoItem(
           data: agora,
           tipo: 'finalizacao',
-          descricao: 'Laudo Técnico: ${laudoTecnico.trim()}',
+          descricao: 'Laudo Técnico de Liberação: ${laudoTecnico.trim()}',
           por: usuario.nome,
-          statusOcorrencia: novoStatusOc,
-          statusEquipamento: novoStatusEq,
+          statusOcorrencia: StatusOcorrencia.finalizada,
+          statusEquipamento: StatusEquipamento.operando,
         ),
       );
 
     await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
-      'status': novoStatusOc.index,
+      'status': StatusOcorrencia.finalizada.index,
       'dataFim': agora.toIso8601String(),
       'observacaoFinal': laudoTecnico.trim(),
       'pecasTrocadas': pecasTrocadas,
       'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
     });
 
+    // Retorna a máquina ao estado Operando e reseta os controles de parada crítica
     await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
-      'status': novoStatusEq.name,
-      'motivoParada': ehCritica ? 'Aguardando contra-assinatura do Supervisor' : null,
+      'status': StatusEquipamento.operando.name,
+      'motivoParada': null,
+      'grauCritico': false,
+      'aprovadaManutencao': false,
+      'tecnicoDesignado': null,
+      'tecnicoDesignadoId': null,
       'ultimoAtualizacao': FieldValue.serverTimestamp(),
     });
   }
@@ -488,179 +728,5 @@ class OcorrenciaProvider extends ChangeNotifier {
       pecasTrocadas: const [],
       usuario: user,
     );
-  }
-
-  // =========================================================================
-  // 3. AÇÕES DO SUPERVISOR (Reatribuir prioridade e Contra-assinatura)
-  // =========================================================================
-
-  /// Reatribuir a prioridade de atendimento técnico das ocorrências
-  Future<void> reatribuirPrioridade({
-    required String ocorrenciaId,
-    required String novaPrioridade,
-    required Usuario usuario,
-  }) async {
-    if (!usuario.can(AppPermission.reatribuirPrioridade)) {
-      throw Exception('Acesso negado: Apenas supervisores podem redefinir a prioridade.');
-    }
-
-    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
-    if (index == -1) throw Exception('Ocorrência não localizada.');
-
-    final o = _ocorrencias[index];
-    final agora = DateTime.now();
-
-    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
-      ..add(
-        HistoricoItem(
-          data: agora,
-          tipo: 'prioridade',
-          descricao: 'Prioridade redefinida de "${o.prioridade}" para "$novaPrioridade" por ${usuario.nome}.',
-          por: usuario.nome,
-          statusOcorrencia: o.status,
-        ),
-      );
-
-    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
-      'prioridade': novaPrioridade,
-      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
-    });
-  }
-
-  /// Contra-assinatura do Supervisor para aprovar o retorno de máquinas críticas ao estado ativo
-  Future<void> contraAssinarRetorno({
-    required String ocorrenciaId,
-    required String parecerSupervisor,
-    required Usuario usuario,
-  }) async {
-    if (!usuario.can(AppPermission.contraAssinarRetorno)) {
-      throw Exception('Acesso negado: Contra-assinatura reservada para o perfil de Supervisor.');
-    }
-
-    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
-    if (index == -1) throw Exception('Ocorrência não localizada.');
-
-    final o = _ocorrencias[index];
-    final agora = DateTime.now();
-
-    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
-      ..add(
-        HistoricoItem(
-          data: agora,
-          tipo: 'aprovacao',
-          descricao: 'Liberação contra-assinada pelo Supervisor: $parecerSupervisor',
-          por: usuario.nome,
-          statusOcorrencia: StatusOcorrencia.finalizada,
-          statusEquipamento: StatusEquipamento.operando,
-        ),
-      );
-
-    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
-      'status': StatusOcorrencia.finalizada.index,
-      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
-    });
-
-    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
-      'status': StatusEquipamento.operando.name,
-      'motivoParada': null,
-      'ultimoAtualizacao': FieldValue.serverTimestamp(),
-    });
-  }
-
-  /// Supervisor entrega o material solicitado pelo técnico,
-  /// fazendo a ocorrência retornar ao status 'Em Andamento'
-  Future<void> entregarMaterial({
-    required String ocorrenciaId,
-    required String descricaoEntrega,
-    required Usuario usuario,
-  }) async {
-    if (!usuario.can(AppPermission.entregarMaterial)) {
-      throw Exception('Acesso negado: Apenas o Supervisor pode registrar entrega de materiais.');
-    }
-
-    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
-    if (index == -1) throw Exception('Ocorrência não encontrada.');
-
-    final o = _ocorrencias[index];
-    if (o.status != StatusOcorrencia.aguardandoMaterial) {
-      throw Exception('Esta ocorrência não está aguardando material (status atual: ${o.status.nome}).');
-    }
-
-    final agora = DateTime.now();
-
-    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
-      ..add(
-        HistoricoItem(
-          data: agora,
-          tipo: 'entrega_material',
-          descricao: 'Material entregue pelo Supervisor ${usuario.nome}: $descricaoEntrega',
-          por: usuario.nome,
-          statusOcorrencia: StatusOcorrencia.emAndamento,
-          statusEquipamento: StatusEquipamento.manutencao,
-        ),
-      );
-
-    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
-      'status': StatusOcorrencia.emAndamento.index,
-      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
-    });
-
-    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
-      'status': StatusEquipamento.manutencao.name,
-      'motivoParada': 'Material entregue — manutenção retomada',
-      'ultimoAtualizacao': FieldValue.serverTimestamp(),
-    });
-  }
-
-  /// Supervisor atribui uma ocorrência a um técnico específico
-  Future<void> atribuirTecnico({
-    required String ocorrenciaId,
-    required String tecnicoId,
-    required String tecnicoNome,
-    required Usuario usuario,
-  }) async {
-    if (!usuario.can(AppPermission.atribuirTecnico)) {
-      throw Exception('Acesso negado: Apenas o Supervisor pode atribuir técnicos.');
-    }
-
-    final index = _ocorrencias.indexWhere((o) => o.id == ocorrenciaId);
-    if (index == -1) throw Exception('Ocorrência não encontrada.');
-
-    final o = _ocorrencias[index];
-    if (o.status == StatusOcorrencia.finalizada) {
-      throw Exception('Não é possível atribuir técnico a uma ocorrência já finalizada.');
-    }
-
-    final agora = DateTime.now();
-
-    final historicoAtualizado = List<HistoricoItem>.from(o.historico)
-      ..add(
-        HistoricoItem(
-          data: agora,
-          tipo: 'atribuicao',
-          descricao: 'Manutenção atribuída ao técnico $tecnicoNome pelo Supervisor ${usuario.nome}.',
-          por: usuario.nome,
-          statusOcorrencia: o.status,
-        ),
-      );
-
-    final novoStatus = o.status == StatusOcorrencia.aberta
-        ? StatusOcorrencia.emAndamento
-        : o.status;
-
-    await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
-      'tecnicoResponsavel': tecnicoNome,
-      'status': novoStatus.index,
-      'dataInicio': (o.dataInicio ?? (novoStatus == StatusOcorrencia.emAndamento ? agora : null))?.toIso8601String(),
-      'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
-    });
-
-    if (novoStatus == StatusOcorrencia.emAndamento && o.status == StatusOcorrencia.aberta) {
-      await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
-        'status': StatusEquipamento.manutencao.name,
-        'responsavel': PerfilUsuario.tecnico.name,
-        'ultimoAtualizacao': FieldValue.serverTimestamp(),
-      });
-    }
   }
 }

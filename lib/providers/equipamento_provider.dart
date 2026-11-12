@@ -55,12 +55,21 @@ class EquipamentoProvider extends ChangeNotifier {
         final nome = (data['nome'] ?? data['nome '] ?? 'Equipamento').toString();
         final localizacao = (data['localizacao'] ?? 'Parque Industrial').toString();
 
+        final grauCritico = data['grauCritico'] == true;
+        final aprovadaManutencao = data['aprovadaManutencao'] == true;
+        final tecnicoDesignado = data['tecnicoDesignado']?.toString();
+        final tecnicoDesignadoId = data['tecnicoDesignadoId']?.toString();
+
         return Equipamento(
           id: doc.id,
           tag: tag,
           nome: nome,
           localizacao: localizacao,
           status: _parseStatus(data['status']?.toString()),
+          grauCritico: grauCritico,
+          aprovadaManutencao: aprovadaManutencao,
+          tecnicoDesignado: tecnicoDesignado,
+          tecnicoDesignadoId: tecnicoDesignadoId,
           ultimoAtualizacao: ultimoAtualizacao,
           ultimaParada: ultimaParada,
           motivoParada: data['motivoParada']?.toString(),
@@ -101,7 +110,6 @@ class EquipamentoProvider extends ChangeNotifier {
   }
 
   Future<void> carregarEquipamentos() async {
-    // Atualização sob demanda caso necessário
     _isLoading = true;
     notifyListeners();
     try {
@@ -133,6 +141,10 @@ class EquipamentoProvider extends ChangeNotifier {
           nome: nome,
           localizacao: localizacao,
           status: _parseStatus(data['status']?.toString()),
+          grauCritico: data['grauCritico'] == true,
+          aprovadaManutencao: data['aprovadaManutencao'] == true,
+          tecnicoDesignado: data['tecnicoDesignado']?.toString(),
+          tecnicoDesignadoId: data['tecnicoDesignadoId']?.toString(),
           ultimoAtualizacao: ultimoAtualizacao,
           ultimaParada: ultimaParada,
           motivoParada: data['motivoParada']?.toString(),
@@ -168,12 +180,45 @@ class EquipamentoProvider extends ChangeNotifier {
       'nome': novo.nome,
       'localizacao': novo.localizacao,
       'status': novo.status.name,
+      'grauCritico': novo.grauCritico,
+      'aprovadaManutencao': novo.aprovadaManutencao,
+      'tecnicoDesignado': novo.tecnicoDesignado,
+      'tecnicoDesignadoId': novo.tecnicoDesignadoId,
       'ultimoAtualizacao': FieldValue.serverTimestamp(),
       'tempoOperacaoTotal': novo.tempoOperacaoTotal,
       'numeroParadas': novo.numeroParadas,
       'tempoParado': novo.tempoParado,
       'motivoParada': novo.motivoParada,
       if (novo.responsavel != null) 'responsavel': novo.responsavel!.name,
+    });
+  }
+
+  /// REGRA DE NEGÓCIO: Permissão EXCLUSIVA de Gestor Industrial para editar máquina
+  Future<void> editarEquipamento({
+    required String id,
+    required String tag,
+    required String nome,
+    required String localizacao,
+    required Usuario usuario,
+  }) async {
+    if (!usuario.can(AppPermission.crudMaquinas)) {
+      throw Exception('Acesso negado: Apenas o Gestor Industrial pode editar equipamentos.');
+    }
+
+    final tagFormatada = tag.trim().toUpperCase();
+    final tagExiste = _equipamentos.any(
+      (e) => e.id != id && e.tag.trim().toUpperCase() == tagFormatada,
+    );
+    if (tagExiste) {
+      throw Exception('Já existe outro equipamento cadastrado com o código/TAG "$tagFormatada".');
+    }
+
+    await FirebaseFirestore.instance.collection('maquinas').doc(id).update({
+      'tag': tagFormatada,
+      'codigo': tagFormatada,
+      'nome': nome.trim(),
+      'localizacao': localizacao.trim(),
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
     });
   }
 
@@ -191,19 +236,24 @@ class EquipamentoProvider extends ChangeNotifier {
     StatusEquipamento novoStatus, {
     String? motivo,
     PerfilUsuario? responsavel,
+    bool? grauCritico,
+    bool? aprovadaManutencao,
+    String? tecnicoDesignado,
+    String? tecnicoDesignadoId,
   }) async {
     final Map<String, dynamic> updateData = {
       'status': novoStatus.name,
       'ultimoAtualizacao': FieldValue.serverTimestamp(),
     };
 
-    if (motivo != null) {
-      updateData['motivoParada'] = motivo;
-    }
-    if (responsavel != null) {
-      updateData['responsavel'] = responsavel.name;
-    }
-    if (novoStatus == StatusEquipamento.parada) {
+    if (motivo != null) updateData['motivoParada'] = motivo;
+    if (responsavel != null) updateData['responsavel'] = responsavel.name;
+    if (grauCritico != null) updateData['grauCritico'] = grauCritico;
+    if (aprovadaManutencao != null) updateData['aprovadaManutencao'] = aprovadaManutencao;
+    if (tecnicoDesignado != null) updateData['tecnicoDesignado'] = tecnicoDesignado;
+    if (tecnicoDesignadoId != null) updateData['tecnicoDesignadoId'] = tecnicoDesignadoId;
+
+    if (novoStatus == StatusEquipamento.parada || novoStatus == StatusEquipamento.aguardandoAprovacao) {
       updateData['ultimaParada'] = FieldValue.serverTimestamp();
       updateData['numeroParadas'] = FieldValue.increment(1);
     }

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/equipamento.dart';
+import '../models/usuario.dart';
 import '../utils/constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/equipamento_provider.dart';
@@ -123,12 +124,12 @@ class _DashboardViewState extends State<DashboardView> {
             ),
           ),
 
-          // 3. Botão de Gerenciamento de Ativos (CRUD EXCLUSIVO do Gestor)
+          // 3. Botão de Gerenciamento de Ativos (EXCLUSIVO do Gestor)
           PermissionGuard(
             permission: AppPermission.crudMaquinas,
             child: IconButton(
               icon: const Icon(Icons.settings_suggest),
-              tooltip: 'Gerenciar Máquinas (CRUD)',
+              tooltip: 'Gerenciamento de Máquinas',
               onPressed: () => Navigator.of(context).pushNamed('/gerenciamento-maquinas'),
             ),
           ),
@@ -136,6 +137,9 @@ class _DashboardViewState extends State<DashboardView> {
       ),
       body: Column(
         children: [
+          // Banner de Destaque Visual por Cargo com Acesso Rápido às Abas Exclusivas
+          _RoleHeaderBanner(usuario: usuario),
+
           SearchFilterBar(
             searchController: _searchController,
             onSearchChanged: (query) {
@@ -222,6 +226,436 @@ class _DashboardViewState extends State<DashboardView> {
   }
 }
 
+/// Banner de identidade visual do perfil logado e atalhos rápidos das abas do cargo.
+class _RoleHeaderBanner extends StatelessWidget {
+  final String userName; // already in uppercase when passed
+  final String roleTitle; // raw title e.g., "Gestor Industrial Executivo"
+  final String roleDescription; // description text for the role
+  final Color roleColor;
+
+  const _RoleHeaderBanner({
+    required this.userName,
+    required this.roleTitle,
+    required this.roleDescription,
+    required this.roleColor,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    // First line: user name in bold, same as before
+    // Second line: role initial letter + role title, both in role color
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          userName,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 12,
+              backgroundColor: roleColor.withValues(alpha: 0.25),
+              child: Text(
+                roleTitle.isNotEmpty ? roleTitle[0].toUpperCase() : "",
+                style: TextStyle(
+                  color: roleColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              roleTitle.toUpperCase(),
+              style: TextStyle(
+                color: roleColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          roleDescription,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+  final Usuario usuario;
+
+  const _RoleHeaderBanner({required this.usuario});
+
+  @override
+  Widget build(BuildContext context) {
+    Color roleColor;
+    IconData roleIcon;
+    String roleTitle;
+    String roleDescription;
+    List<Widget> quickActions = [];
+
+    switch (usuario.perfil) {
+      case PerfilUsuario.operador:
+        roleColor = const Color(0xFFF59E0B); // Laranja industrial
+        roleIcon = Icons.engineering;
+        roleTitle = 'Operador de Produção';
+        roleDescription = 'Acesso ao chão de fábrica para registro e acompanhamento de paradas de máquinas.';
+        quickActions = [
+          _QuickActionButton(
+            label: 'Linha Operacional',
+            icon: Icons.precision_manufacturing,
+            color: roleColor,
+            onTap: () {},
+            isCurrent: true,
+          ),
+        ];
+        break;
+
+      case PerfilUsuario.tecnico:
+        roleColor = const Color(0xFF06B6D4); // Ciano
+        roleIcon = Icons.build_circle;
+        roleTitle = 'Técnico de Manutenção';
+        roleDescription = 'Reparo de máquinas, atendimento a paradas e emissão de laudos técnicos.';
+        quickActions = [
+          _QuickActionButton(
+            label: 'Painel Técnico de Manutenção',
+            icon: Icons.build_circle_outlined,
+            color: roleColor,
+            onTap: () => Navigator.of(context).pushNamed('/painel-tecnico'),
+          ),
+        ];
+        break;
+
+      case PerfilUsuario.supervisor:
+        roleColor = const Color(0xFF6366F1); // Índigo / Roxo
+        roleIcon = Icons.supervisor_account;
+        roleTitle = 'Supervisor de Manutenção';
+        roleDescription = 'Aprovação de paradas críticas, designação de técnicos, suprimento de materiais e KPIs.';
+        quickActions = [
+          _QuickActionButton(
+            label: 'Aprovações & Materiais',
+            icon: Icons.verified_user,
+            color: roleColor,
+            onTap: () => Navigator.of(context).pushNamed('/painel-supervisor'),
+          ),
+          const SizedBox(width: 8),
+          _QuickActionButton(
+            label: 'Relatórios & KPIs',
+            icon: Icons.analytics_outlined,
+            color: Colors.blueAccent,
+            onTap: () => Navigator.of(context).pushNamed('/relatorios'),
+          ),
+        ];
+        break;
+
+      case PerfilUsuario.gestor:
+        roleColor = const Color(0xFF10B981); // Esmeralda / Ouro
+        roleIcon = Icons.admin_panel_settings;
+        roleTitle = 'Gestor Industrial Executivo';
+        roleDescription = 'Governança de ativos industriais: Gestão de máquinas e análise de relatórios & KPIs.';
+        quickActions = [
+          _QuickActionButton(
+            label: 'Gerenciar Máquinas',
+            icon: Icons.settings_suggest,
+            color: roleColor,
+            onTap: () => Navigator.of(context).pushNamed('/gerenciamento-maquinas'),
+          ),
+          const SizedBox(width: 8),
+          _QuickActionButton(
+            label: 'Relatórios & KPIs',
+            icon: Icons.analytics_outlined,
+            color: Colors.teal.shade700,
+            onTap: () => Navigator.of(context).pushNamed('/relatorios'),
+          ),
+        ];
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            roleColor.withValues(alpha: 0.22),
+            roleColor.withValues(alpha: 0.08),
+            Theme.of(context).cardColor,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: roleColor.withValues(alpha: 0.4), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: roleColor.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Unified role header banner: left letter initial, right role title in same color
+          _RoleHeaderBanner(
+            userName: usuario.nome,
+            roleTitle: roleTitle,
+            roleDescription: roleDescription,
+            roleColor: roleColor,
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Text(
+                'Acesso Rápido às Abas do Cargo:',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: quickActions),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  final bool isCurrent;
+
+  const _QuickActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    this.isCurrent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isCurrent ? color.withValues(alpha: 0.25) : color,
+        foregroundColor: isCurrent ? color : Colors.white,
+        elevation: isCurrent ? 0 : 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: isCurrent ? BorderSide(color: color, width: 1.5) : BorderSide.none,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      ),
+      icon: Icon(icon, size: 18),
+      label: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+      ),
+      onPressed: isCurrent ? null : onTap,
+    );
+  }
+}
+
+// New unified role header banner widget
+class _RoleHeaderBanner extends StatelessWidget {
+  final String userName; // already in uppercase when passed
+  final String roleTitle; // raw title e.g., "Gestor Industrial Executivo"
+  final String roleDescription; // description text for the role
+  final Color roleColor;
+
+  const _RoleHeaderBanner({
+    required this.userName,
+    required this.roleTitle,
+    required this.roleDescription,
+    required this.roleColor,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    // First line: user name in bold, same as before
+    // Second line: role initial letter + role title, both in role color
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          userName,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 12,
+              backgroundColor: roleColor.withValues(alpha: 0.25),
+              child: Text(
+                roleTitle.isNotEmpty ? roleTitle[0].toUpperCase() : "",
+                style: TextStyle(
+                  color: roleColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              roleTitle.toUpperCase(),
+              style: TextStyle(
+                color: roleColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          roleDescription,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+  final String userName; // already in uppercase when passed
+  final String roleTitle; // raw title e.g., "Gestor Industrial Executivo"
+  final Color roleColor;
+
+  const _RoleHeaderBanner({
+    required this.userName,
+    required this.roleTitle,
+    required this.roleColor,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    // First line: user name in bold, same as before
+    // Second line: role initial letter + role title, both in role color
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          userName,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 12,
+              backgroundColor: roleColor.withValues(alpha: 0.25),
+              child: Text(
+                roleTitle.isNotEmpty ? roleTitle[0].toUpperCase() : "",
+                style: TextStyle(
+                  color: roleColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              roleTitle.toUpperCase(),
+              style: TextStyle(
+                color: roleColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          roleDescription,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  final bool isCurrent;
+
+  const _QuickActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    this.isCurrent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isCurrent ? color.withValues(alpha: 0.25) : color,
+        foregroundColor: isCurrent ? color : Colors.white,
+        elevation: isCurrent ? 0 : 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: isCurrent ? BorderSide(color: color, width: 1.5) : BorderSide.none,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      ),
+      icon: Icon(icon, size: 18),
+      label: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+      ),
+      onPressed: isCurrent ? null : onTap,
+    );
+  }
+}
+
 /// Linha de indicadores rápidos (KPIs de status dos equipamentos).
 class _ResumoExecutive extends StatelessWidget {
   final List<Equipamento> equipamentos;
@@ -238,6 +672,7 @@ class _ResumoExecutive extends StatelessWidget {
     final operando = statusCounts[StatusEquipamento.operando] ?? 0;
     final paradas = statusCounts[StatusEquipamento.parada] ?? 0;
     final manutencao = statusCounts[StatusEquipamento.manutencao] ?? 0;
+    final aguardandoAprovacao = statusCounts[StatusEquipamento.aguardandoAprovacao] ?? 0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -270,6 +705,15 @@ class _ResumoExecutive extends StatelessWidget {
             cor: AppCores.manutencao,
             icone: Icons.build,
           ),
+          if (aguardandoAprovacao > 0) ...[
+            const SizedBox(width: 8),
+            _ResumoCard(
+              label: 'Aprovação',
+              valor: aguardandoAprovacao.toString(),
+              cor: AppCores.aguardandoAprovacao,
+              icone: Icons.pending_actions,
+            ),
+          ],
         ],
       ),
     );

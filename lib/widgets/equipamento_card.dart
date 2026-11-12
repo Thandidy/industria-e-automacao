@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'status_badge.dart';
 import '../models/equipamento.dart';
+import '../utils/constants.dart';
 import '../utils/helpers.dart';
 
 /// Card visual de um equipamento para a listagem no dashboard.
@@ -38,9 +39,55 @@ class EquipamentoCard extends StatelessWidget {
                         ),
                   ),
                 ),
-                StatusBadge(status: equipamento.status),
+                StatusBadge(
+                  status: equipamento.status,
+                  equipamento: equipamento,
+                ),
               ],
             ),
+            if (equipamento.grauCritico && !equipamento.aprovadaManutencao && equipamento.status != StatusEquipamento.operando) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade700, width: 1),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.pending_actions, size: 14, color: Colors.amber),
+                    SizedBox(width: 6),
+                    Text(
+                      'Parada Crítica — Exige aprovação do Supervisor',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.amber),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (equipamento.grauCritico && equipamento.aprovadaManutencao && equipamento.tecnicoDesignado != null && equipamento.status != StatusEquipamento.operando) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.teal.shade700, width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.assignment_ind, size: 14, color: Colors.teal),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Designada ao técnico: ${equipamento.tecnicoDesignado}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.teal),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             // Título
             Text(

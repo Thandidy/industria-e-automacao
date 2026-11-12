@@ -1,9 +1,7 @@
 // lib/models/ocorrencia.dart
 
 import 'package:flutter/material.dart';
-
 import 'package:uuid/uuid.dart';
-
 import '../models/historico.dart';
 import '../utils/constants.dart';
 
@@ -15,6 +13,9 @@ class Ocorrencia {
   final String descricao;
   final String prioridade;
   final StatusOcorrencia status;
+  final bool aprovadaManutencao;
+  final String? tecnicoDesignado;
+  final String? tecnicoDesignadoId;
   final DateTime dataAbertura;
   final DateTime? dataInicio;
   final DateTime? dataFim;
@@ -32,6 +33,9 @@ class Ocorrencia {
     required this.descricao,
     required this.prioridade,
     this.status = StatusOcorrencia.aberta,
+    this.aprovadaManutencao = false,
+    this.tecnicoDesignado,
+    this.tecnicoDesignadoId,
     required this.dataAbertura,
     this.dataInicio,
     this.dataFim,
@@ -42,6 +46,9 @@ class Ocorrencia {
     List<HistoricoItem>? historico,
   }) : id = id ?? const Uuid().v4(),
        historico = historico ?? [];
+
+  bool get ehCritica => prioridade.toLowerCase().trim() == 'crítica' || prioridade.toLowerCase().trim() == 'critica';
+  bool get precisaAprovacao => ehCritica && !aprovadaManutencao && status != StatusOcorrencia.finalizada;
 
   String get duracaoSegundos {
     if (dataInicio == null) return '0';
@@ -93,7 +100,16 @@ class Ocorrencia {
     }
   }
 
-  bool get podeIniciar => status == StatusOcorrencia.aberta;
+  bool get podeIniciar {
+    if (status == StatusOcorrencia.emAndamento || status == StatusOcorrencia.finalizada) {
+      return false;
+    }
+    if (ehCritica) {
+      return aprovadaManutencao;
+    }
+    return status == StatusOcorrencia.aberta;
+  }
+
   bool get podeFinalizar => status == StatusOcorrencia.emAndamento;
 
   static String _formatarDuracao(int segundos) {
@@ -113,6 +129,9 @@ class Ocorrencia {
     String? descricao,
     String? prioridade,
     StatusOcorrencia? status,
+    bool? aprovadaManutencao,
+    String? tecnicoDesignado,
+    String? tecnicoDesignadoId,
     DateTime? dataAbertura,
     DateTime? dataInicio,
     DateTime? dataFim,
@@ -130,6 +149,9 @@ class Ocorrencia {
       descricao: descricao ?? this.descricao,
       prioridade: prioridade ?? this.prioridade,
       status: status ?? this.status,
+      aprovadaManutencao: aprovadaManutencao ?? this.aprovadaManutencao,
+      tecnicoDesignado: tecnicoDesignado ?? this.tecnicoDesignado,
+      tecnicoDesignadoId: tecnicoDesignadoId ?? this.tecnicoDesignadoId,
       dataAbertura: dataAbertura ?? this.dataAbertura,
       dataInicio: dataInicio ?? this.dataInicio,
       dataFim: dataFim ?? this.dataFim,
@@ -150,6 +172,9 @@ class Ocorrencia {
       'descricao': descricao,
       'prioridade': prioridade,
       'status': status.index,
+      'aprovadaManutencao': aprovadaManutencao,
+      'tecnicoDesignado': tecnicoDesignado,
+      'tecnicoDesignadoId': tecnicoDesignadoId,
       'dataAbertura': dataAbertura.toIso8601String(),
       'dataInicio': dataInicio?.toIso8601String(),
       'dataFim': dataFim?.toIso8601String(),
@@ -170,6 +195,9 @@ class Ocorrencia {
       descricao: json['descricao'] ?? '',
       prioridade: json['prioridade'] ?? 'Média',
       status: StatusOcorrencia.values[json['status'] ?? 0],
+      aprovadaManutencao: json['aprovadaManutencao'] == true,
+      tecnicoDesignado: json['tecnicoDesignado']?.toString(),
+      tecnicoDesignadoId: json['tecnicoDesignadoId']?.toString(),
       dataAbertura: DateTime.parse(json['dataAbertura'] ?? DateTime.now().toIso8601String()),
       dataInicio: json['dataInicio'] != null ? DateTime.parse(json['dataInicio']) : null,
       dataFim: json['dataFim'] != null ? DateTime.parse(json['dataFim']) : null,

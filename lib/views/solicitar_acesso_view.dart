@@ -42,13 +42,13 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
   String _perfilParaString(PerfilUsuario perfil) {
     switch (perfil) {
       case PerfilUsuario.operador:
-        return 'operador';
+        return 'Operador';
       case PerfilUsuario.tecnico:
-        return 'tecnico';
+        return 'Técnico';
       case PerfilUsuario.supervisor:
-        return 'supervisor';
+        return 'Supervisor';
       case PerfilUsuario.gestor:
-        return 'gestor industrial';
+        return 'Gestor Industrial';
     }
   }
 

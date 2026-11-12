@@ -12,7 +12,6 @@ import '../widgets/custom_app_bar.dart';
 import '../widgets/permission_guard.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/snackbar_helper.dart';
-import '../widgets/timeline_item.dart';
 
 /// Tela de detalhes de um equipamento com timeline e ações RBAC por perfil.
 class EquipamentoDetalheView extends StatefulWidget {
@@ -78,7 +77,7 @@ class _EquipamentoDetalheViewState extends State<EquipamentoDetalheView> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: prioridadeSelecionada,
+                    initialValue: prioridadeSelecionada,
                     decoration: const InputDecoration(
                       labelText: 'Grau de Prioridade',
                       border: OutlineInputBorder(),
@@ -386,6 +385,108 @@ class _EquipamentoDetalheViewState extends State<EquipamentoDetalheView> {
     }
   }
 
+  // 3. Supervisor: Aprovar Manutenção Crítica e Designar Técnico
+  Future<void> _abrirModalAprovarEDesignar(Ocorrencia ocorrencia) async {
+    final provider = context.read<OcorrenciaProvider>();
+    final tecnicos = provider.tecnicosDisponiveis;
+    String? tecnicoIdSelecionado;
+    String? tecnicoNomeSelecionado;
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.verified_user, color: Colors.teal),
+              SizedBox(width: 8),
+              Text('Aprovar Manutenção Crítica'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Equipamento: ${ocorrencia.equipamentoTag} — ${ocorrencia.motivo}'),
+              const SizedBox(height: 12),
+              const Text(
+                'Esta é uma parada crítica. Ao aprovar, designe o técnico exclusivo que executará o reparo:',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              const Text('Selecione o Técnico Responsável:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (tecnicos.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Nenhum técnico cadastrado encontrado.', style: TextStyle(color: Colors.red)),
+                )
+              else
+                ...tecnicos.map((tec) => RadioListTile<String>(
+                      title: Text(tec['nome']!),
+                      subtitle: Text('ID: ${tec['id']}'),
+                      value: tec['id']!,
+                      groupValue: tecnicoIdSelecionado,
+                      onChanged: (v) {
+                        setDialogState(() {
+                          tecnicoIdSelecionado = v;
+                          tecnicoNomeSelecionado = tec['nome'];
+                        });
+                      },
+                    )),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+              icon: const Icon(Icons.check_circle, color: Colors.white),
+              label: const Text('Aprovar e Designar', style: TextStyle(color: Colors.white)),
+              onPressed: tecnicoIdSelecionado == null
+                  ? null
+                  : () => Navigator.of(ctx).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmou != true || tecnicoIdSelecionado == null || tecnicoNomeSelecionado == null) return;
+    if (!mounted) return;
+
+    final usuario = context.read<AuthProvider>().usuario;
+    if (usuario == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await provider.aprovarEDesignarTecnico(
+        ocorrenciaId: ocorrencia.id,
+        tecnicoId: tecnicoIdSelecionado!,
+        tecnicoNome: tecnicoNomeSelecionado!,
+        usuario: usuario,
+      );
+
+      if (!mounted) return;
+      SnackbarHelper.showSnackbar(
+        context: context,
+        message: 'Manutenção aprovada e designada para $tecnicoNomeSelecionado!',
+        isSuccess: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      SnackbarHelper.showSnackbar(
+        context: context,
+        message: e.toString().replaceFirst('Exception: ', ''),
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   // 3. Supervisor: Reatribuir Prioridade
   Future<void> _abrirModalReatribuirPrioridade(Ocorrencia ocorrencia) async {
     String prioridade = ocorrencia.prioridade;
@@ -396,7 +497,7 @@ class _EquipamentoDetalheViewState extends State<EquipamentoDetalheView> {
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('Reatribuir Prioridade da Ocorrência'),
           content: DropdownButtonFormField<String>(
-            value: prioridade,
+            initialValue: prioridade,
             decoration: const InputDecoration(labelText: 'Nova Prioridade', border: OutlineInputBorder()),
             items: const [
               DropdownMenuItem(value: 'Baixa', child: Text('Baixa')),
@@ -781,6 +882,9 @@ class _EquipamentoDetalheViewState extends State<EquipamentoDetalheView> {
                           onAssumirManutencao: ocorrenciaAtiva != null
                               ? () => _assumirManutencao(ocorrenciaAtiva)
                               : null,
+                          onAprovarEDesignar: ocorrenciaAtiva != null
+                              ? () => _abrirModalAprovarEDesignar(ocorrenciaAtiva)
+                              : null,
                           onPausarMaterial: ocorrenciaAtiva != null
                               ? () => _abrirModalPausaMaterial(ocorrenciaAtiva)
                               : null,
@@ -818,6 +922,7 @@ class _AcoesRBACCard extends StatelessWidget {
   final VoidCallback onRegistrarParada;
   final VoidCallback? onSolicitarAtendimento;
   final VoidCallback? onAssumirManutencao;
+  final VoidCallback? onAprovarEDesignar;
   final VoidCallback? onPausarMaterial;
   final VoidCallback? onFinalizarLaudo;
   final VoidCallback? onReatribuirPrioridade;
@@ -831,6 +936,7 @@ class _AcoesRBACCard extends StatelessWidget {
     required this.onRegistrarParada,
     this.onSolicitarAtendimento,
     this.onAssumirManutencao,
+    this.onAprovarEDesignar,
     this.onPausarMaterial,
     this.onFinalizarLaudo,
     this.onReatribuirPrioridade,
@@ -842,9 +948,21 @@ class _AcoesRBACCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = equipamento.status;
+    final usuario = context.watch<AuthProvider>().usuario;
+    final perfil = usuario?.perfil;
+
+    final ehCritica = (ocorrenciaAtiva != null && ocorrenciaAtiva!.ehCritica) || equipamento.grauCritico;
+    final estaAprovada = (ocorrenciaAtiva?.aprovadaManutencao == true) || (equipamento.aprovadaManutencao == true);
+    final precisaAprovacao = ehCritica && !estaAprovada;
+
+    final tecDesignadoId = ocorrenciaAtiva?.tecnicoDesignadoId ?? equipamento.tecnicoDesignadoId;
+    final tecDesignadoNome = ocorrenciaAtiva?.tecnicoDesignado ?? equipamento.tecnicoDesignado;
+    final souTecnicoDesignado = usuario != null &&
+        ((tecDesignadoId != null && usuario.id == tecDesignadoId) ||
+         (tecDesignadoNome != null && usuario.nome == tecDesignadoNome));
 
     return Card(
-      elevation: 2,
+      elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -853,7 +971,7 @@ class _AcoesRBACCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.security, size: 20, color: Colors.blueAccent),
+                const Icon(Icons.shield_outlined, size: 20, color: Colors.blueAccent),
                 const SizedBox(width: 8),
                 Text(
                   'Ações Operacionais Permitidas',
@@ -865,151 +983,204 @@ class _AcoesRBACCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            // 1. Operador: Registrar Parada Crítica (se a máquina estiver operando)
-            if (status == StatusEquipamento.operando)
-              PermissionGuard(
-                permission: AppPermission.registrarParadaCritica,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  icon: const Icon(Icons.warning, color: Colors.white),
-                  label: const Text('Registrar Parada Crítica', style: TextStyle(color: Colors.white)),
-                  onPressed: onRegistrarParada,
+            // Gestor: Informação de acesso executivo
+            if (perfil == PerfilUsuario.gestor) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blueGrey.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blueGrey.shade300),
                 ),
-              ),
-
-            // 1.1 Operador: Solicitar Atendimento se já estiver parada
-            if (status == StatusEquipamento.parada && ocorrenciaAtiva != null)
-              PermissionGuard(
-                permission: AppPermission.solicitarAtendimento,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.notification_important, color: Colors.orange),
-                    label: const Text('Solicitar Atendimento de Manutenção'),
-                    onPressed: onSolicitarAtendimento,
-                  ),
-                ),
-              ),
-
-            // 2. Técnico: Assumir ocorrência (se estiver parada ou aguardando material)
-            if ((status == StatusEquipamento.parada || status == StatusEquipamento.aguardandoMaterial) &&
-                ocorrenciaAtiva != null)
-              PermissionGuard(
-                permission: AppPermission.assumirManutencao,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                child: const Row(
+                  children: [
+                    Icon(Icons.admin_panel_settings, color: Colors.teal, size: 24),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Perfil Gestor Industrial: Modo executivo. Você possui acesso irrestrito ao Gerenciamento de Máquinas e Relatórios & KPIs.',
+                        style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                      ),
                     ),
-                    icon: const Icon(Icons.build, color: Colors.white),
-                    label: const Text('Assumir Manutenção', style: TextStyle(color: Colors.white)),
-                    onPressed: onAssumirManutencao,
-                  ),
-                ),
-              ),
-
-            // 2.1 Técnico: Pausar por falta de material (se estiver em manutenção)
-            if (status == StatusEquipamento.manutencao && ocorrenciaAtiva != null) ...[
-              PermissionGuard(
-                permission: AppPermission.pausarAguardandoMaterial,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.inventory_2_outlined, color: Colors.amber),
-                  label: const Text('Pausar: Aguardando Material'),
-                  onPressed: onPausarMaterial,
-                ),
-              ),
-              const SizedBox(height: 8),
-              // 2.2 Técnico: Preencher Laudo Técnico e Finalizar
-              PermissionGuard(
-                permission: AppPermission.finalizarComLaudo,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  icon: const Icon(Icons.assignment_turned_in, color: Colors.white),
-                  label: const Text('Preencher Laudo & Finalizar', style: TextStyle(color: Colors.white)),
-                  onPressed: onFinalizarLaudo,
+                  ],
                 ),
               ),
             ],
 
-            // 3. Supervisor: Reatribuir prioridade (em qualquer ocorrência aberta)
-            if (ocorrenciaAtiva != null)
-              PermissionGuard(
-                permission: AppPermission.reatribuirPrioridade,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.low_priority),
-                    label: Text('Reatribuir Prioridade (Atual: ${ocorrenciaAtiva?.prioridade})'),
-                    onPressed: onReatribuirPrioridade,
+            // 1. Operador
+            if (perfil == PerfilUsuario.operador) ...[
+              if (status == StatusEquipamento.operando)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
+                  icon: const Icon(Icons.warning, color: Colors.white),
+                  label: const Text('Registrar Parada de Máquina', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: onRegistrarParada,
+                )
+              else if (ocorrenciaAtiva != null)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.notification_important, color: Colors.orange),
+                  label: const Text('Solicitar Atendimento de Manutenção'),
+                  onPressed: onSolicitarAtendimento,
                 ),
-              ),
+            ],
 
-            // 3.1 Supervisor: Contra-assinatura exclusiva de máquina crítica
-            if (status == StatusEquipamento.aguardandoAprovacao)
-              PermissionGuard(
-                permission: AppPermission.contraAssinarRetorno,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.purple,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    icon: const Icon(Icons.verified, color: Colors.white),
-                    label: const Text('Contra-assinar Liberação de Retorno', style: TextStyle(color: Colors.white)),
-                    onPressed: onContraAssinar,
+            // 2. Supervisor
+            if (perfil == PerfilUsuario.supervisor) ...[
+              // Se há parada crítica precisando de aprovação e designação
+              if (precisaAprovacao && ocorrenciaAtiva != null) ...[
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
+                  icon: const Icon(Icons.verified_user, color: Colors.white),
+                  label: const Text('Aprovar Manutenção & Designar Técnico',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: onAprovarEDesignar,
                 ),
-              ),
+                const SizedBox(height: 10),
+              ],
 
-            // 3.2 Supervisor: Entregar Material (se a máquina/ocorrência estiver aguardando material)
-            if (status == StatusEquipamento.aguardandoMaterial && ocorrenciaAtiva != null)
-              PermissionGuard(
-                permission: AppPermission.entregarMaterial,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    icon: const Icon(Icons.local_shipping, color: Colors.white),
-                    label: const Text('Entregar Material ao Técnico', style: TextStyle(color: Colors.white)),
-                    onPressed: onEntregarMaterial,
+              // Se a máquina estiver aguardando materiais
+              if (status == StatusEquipamento.aguardandoMaterial && ocorrenciaAtiva != null) ...[
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade600,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
+                  icon: const Icon(Icons.local_shipping, color: Colors.white),
+                  label: const Text('Entregar Material ao Técnico', style: TextStyle(color: Colors.white)),
+                  onPressed: onEntregarMaterial,
                 ),
-              ),
+                const SizedBox(height: 10),
+              ],
 
-            // 3.3 Supervisor: Atribuir Técnico (em qualquer ocorrência ativa não finalizada)
-            if (ocorrenciaAtiva != null)
-              PermissionGuard(
-                permission: AppPermission.atribuirTecnico,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.indigo,
-                      side: const BorderSide(color: Colors.indigo),
-                    ),
-                    icon: const Icon(Icons.person_pin_circle),
-                    label: Text(
-                      ocorrenciaAtiva?.tecnicoResponsavel != null
-                          ? 'Reatribuir Técnico (Atual: ${ocorrenciaAtiva?.tecnicoResponsavel})'
-                          : 'Atribuir Técnico Responsável',
-                    ),
-                    onPressed: onAtribuirTecnico,
+              // Supervisor pode reatribuir prioridade ou técnico
+              if (ocorrenciaAtiva != null) ...[
+                TextButton.icon(
+                  icon: const Icon(Icons.low_priority),
+                  label: Text('Reatribuir Prioridade (Atual: ${ocorrenciaAtiva?.prioridade})'),
+                  onPressed: onReatribuirPrioridade,
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.indigo,
+                    side: const BorderSide(color: Colors.indigo),
+                  ),
+                  icon: const Icon(Icons.person_pin_circle),
+                  label: Text(
+                    ocorrenciaAtiva?.tecnicoResponsavel != null
+                        ? 'Reatribuir Técnico (Atual: ${ocorrenciaAtiva?.tecnicoResponsavel})'
+                        : 'Atribuir Técnico Responsável',
+                  ),
+                  onPressed: onAtribuirTecnico,
+                ),
+              ],
+            ],
+
+            // 3. Técnico
+            if (perfil == PerfilUsuario.tecnico) ...[
+              // Caso A: Parada Crítica Aguardando Aprovação
+              if (precisaAprovacao) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.amber.shade700),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.lock_clock, color: Colors.amber, size: 24),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Parada Crítica — Aguardando Aprovação e Designação pelo Supervisor. O atendimento só pode ser iniciado após a validação da supervisão.',
+                          style: TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
+              ]
+              // Caso B: Parada Crítica Aprovada
+              else if (ehCritica && estaAprovada) ...[
+                if (status == StatusEquipamento.parada ||
+                    status == StatusEquipamento.aguardandoAprovacao ||
+                    status == StatusEquipamento.aguardandoMaterial) ...[
+                  if (souTecnicoDesignado)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal.shade700,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      icon: const Icon(Icons.play_arrow, color: Colors.white),
+                      label: Text(
+                        'Iniciar Atendimento Designado ($tecDesignadoNome)',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: onAssumirManutencao,
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade400),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.person_off, color: Colors.grey, size: 24),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Manutenção Crítica designada exclusivamente a "$tecDesignadoNome". Apenas o técnico designado pode executar a manutenção.',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ]
+              // Caso C: Parada Não-Crítica (Baixa, Média, Alta)
+              else if (!ehCritica &&
+                  (status == StatusEquipamento.parada || status == StatusEquipamento.aguardandoMaterial) &&
+                  ocorrenciaAtiva != null) ...[
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.build, color: Colors.white),
+                  label: const Text('Assumir Manutenção', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: onAssumirManutencao,
+                ),
+              ],
+
+              // Se já estiver em manutenção (Técnico trabalhando)
+              if (status == StatusEquipamento.manutencao && ocorrenciaAtiva != null) ...[
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.inventory_2_outlined, color: Colors.amber),
+                  label: const Text('Pausar: Aguardando Material'),
+                  onPressed: onPausarMaterial,
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.assignment_turned_in, color: Colors.white),
+                  label: const Text('Preencher Laudo & Finalizar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: onFinalizarLaudo,
+                ),
+              ],
+            ],
           ],
         ),
       ),
@@ -1068,9 +1239,35 @@ class _HeaderEquipamento extends StatelessWidget {
                   ],
                 ),
               ),
-              StatusBadge(status: equipamento.status, size: 20),
+              StatusBadge(
+                status: equipamento.status,
+                equipamento: equipamento,
+                size: 20,
+              ),
             ],
           ),
+          if (equipamento.tecnicoDesignado != null && equipamento.status != StatusEquipamento.operando) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.teal.shade900.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.tealAccent.shade400, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.assignment_ind, size: 14, color: Colors.tealAccent),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Técnico Designado: ${equipamento.tecnicoDesignado}',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.tealAccent),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [

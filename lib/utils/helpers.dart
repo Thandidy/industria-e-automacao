@@ -40,7 +40,7 @@ class Helpers {
 /// Extensão para converter String em StatusEquipamento (compatibilidade)
 extension StringToStatusEquipamento on String {
   StatusEquipamento toStatusEquipamento() {
-    switch (this.toLowerCase()) {
+    switch (toLowerCase()) {
       case 'operando':
         return StatusEquipamento.operando;
       case 'parada':

@@ -10,10 +10,8 @@ class AppTheme {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: AppCores.background,
       colorScheme: const ColorScheme.dark(
-        background: AppCores.background,
         surface: AppCores.surface,
-        surfaceVariant: AppCores.surfaceVariant,
-        onBackground: AppCores.onBackground,
+        surfaceContainerHighest: AppCores.surfaceVariant,
         onSurface: AppCores.onSurface,
         onSurfaceVariant: AppCores.onSurfaceVariant,
         primary: AppCores.primary,

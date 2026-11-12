@@ -3,16 +3,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/ocorrencia.dart';
-import '../models/usuario.dart';
 import '../providers/auth_provider.dart';
 import '../providers/ocorrencia_provider.dart';
 import '../utils/constants.dart';
 import '../widgets/snackbar_helper.dart';
 
 /// Painel Operacional Exclusivo do Supervisor
-/// Possui abas dedicadas para:
-/// 1. "Aguardando Material" - Realizar a entrega de materiais aos técnicos.
-/// 2. "Atribuir Técnicos" - Direcionar ou reatribuir ocorrências a técnicos específicos.
+/// Abas dedicadas:
+/// 1. "Aprovações Críticas & Designação" - Aprovar manutenções de grau crítico e designar técnico exclusivo.
+/// 2. "Suprimento de Materiais" - Entregar insumos e peças para técnicos continuarem o reparo.
 class PainelSupervisorView extends StatefulWidget {
   const PainelSupervisorView({super.key});
 
@@ -23,6 +22,136 @@ class PainelSupervisorView extends StatefulWidget {
 class _PainelSupervisorViewState extends State<PainelSupervisorView> {
   bool _isLoading = false;
 
+  Future<void> _abrirModalAprovarEDesignar(BuildContext context, Ocorrencia ocorrencia) async {
+    final provider = context.read<OcorrenciaProvider>();
+    final tecnicos = provider.tecnicosDisponiveis;
+    String? tecnicoIdSelecionado = ocorrencia.tecnicoDesignadoId;
+    String? tecnicoNomeSelecionado = ocorrencia.tecnicoDesignado;
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.assignment_ind, color: Colors.purpleAccent),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text('Aprovar & Designar Técnico', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Equipamento: ${ocorrencia.equipamentoTag}\nMotivo: ${ocorrencia.motivo}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Selecione o técnico exclusivo que será autorizado a iniciar o conserto:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                if (tecnicos.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text('Nenhum técnico cadastrado na coleção de usuários.', style: TextStyle(color: Colors.grey)),
+                  )
+                else
+                  ...tecnicos.map((tec) => RadioListTile<String>(
+                        title: Text(tec['nome']!, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text('ID: ${tec['id']}'),
+                        value: tec['id']!,
+                        groupValue: tecnicoIdSelecionado,
+                        onChanged: (v) {
+                          setDialogState(() {
+                            tecnicoIdSelecionado = v;
+                            tecnicoNomeSelecionado = tec['nome'];
+                          });
+                        },
+                      )),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.purpleAccent.shade700),
+              icon: const Icon(Icons.verified, color: Colors.white),
+              label: const Text('Aprovar e Designar', style: TextStyle(color: Colors.white)),
+              onPressed: tecnicoIdSelecionado == null
+                  ? null
+                  : () => Navigator.of(ctx).pop(true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmou != true || tecnicoIdSelecionado == null || tecnicoNomeSelecionado == null) return;
+    if (!mounted) return;
+
+    final usuario = context.read<AuthProvider>().usuario;
+    if (usuario == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await context.read<OcorrenciaProvider>().aprovarEDesignarTecnico(
+            ocorrenciaId: ocorrencia.id,
+            tecnicoId: tecnicoIdSelecionado!,
+            tecnicoNome: tecnicoNomeSelecionado!,
+            usuario: usuario,
+          );
+
+      if (!mounted) return;
+      SnackbarHelper.showSnackbar(
+        context: context,
+        message: 'Manutenção aprovada com sucesso! Técnico designado: $tecnicoNomeSelecionado.',
+        isSuccess: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      SnackbarHelper.showSnackbar(
+        context: context,
+        message: e.toString().replaceFirst('Exception: ', ''),
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _abrirModalEntregarMaterial(BuildContext context, Ocorrencia ocorrencia) async {
     final formKey = GlobalKey<FormState>();
     final descricaoController = TextEditingController();
@@ -30,6 +159,7 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
             Icon(Icons.local_shipping, color: Colors.teal),
@@ -53,7 +183,7 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
                   const SizedBox(height: 4),
                   Text(
                     'Técnico aguardando: ${ocorrencia.tecnicoResponsavel}',
-                    style: TextStyle(color: Colors.teal.shade700, fontWeight: FontWeight.w600),
+                    style: TextStyle(color: Colors.teal.shade300, fontWeight: FontWeight.w600),
                   ),
                 ],
                 const SizedBox(height: 16),
@@ -61,7 +191,7 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
                   controller: descricaoController,
                   decoration: const InputDecoration(
                     labelText: 'Descrição dos Materiais Entregues',
-                    hintText: 'Ex.: 2x Rolamentos, Correia 1200mm...',
+                    hintText: 'Ex.: Rolamento 6205, Correia trapezoidal 1200mm...',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.inventory_2),
                   ),
@@ -110,112 +240,7 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
       if (!mounted) return;
       SnackbarHelper.showSnackbar(
         context: context,
-        message: 'Material entregue com sucesso! Manutenção em andamento.',
-        isSuccess: true,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      SnackbarHelper.showSnackbar(
-        context: context,
-        message: e.toString().replaceFirst('Exception: ', ''),
-        isError: true,
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _abrirModalAtribuirTecnico(BuildContext context, Ocorrencia ocorrencia) async {
-    final provider = context.read<OcorrenciaProvider>();
-    final tecnicos = provider.tecnicosDisponiveis;
-    String? tecnicoIdSelecionado;
-    String? tecnicoNomeSelecionado;
-
-    final confirmou = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.person_pin_circle, color: Colors.indigo),
-              SizedBox(width: 8),
-              Text('Atribuir Técnico'),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Equipamento: ${ocorrencia.equipamentoTag} (${ocorrencia.motivo})',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                if (ocorrencia.tecnicoResponsavel != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Técnico atual: ${ocorrencia.tecnicoResponsavel}',
-                    style: TextStyle(color: Colors.orange.shade700, fontStyle: FontStyle.italic),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                const Text(
-                  'Selecione o técnico para este chamado:',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                ...tecnicos.map((tec) => RadioListTile<String>(
-                      title: Text(tec['nome']!),
-                      subtitle: Text('ID: ${tec['id']}'),
-                      value: tec['id']!,
-                      groupValue: tecnicoIdSelecionado,
-                      onChanged: (v) {
-                        setDialogState(() {
-                          tecnicoIdSelecionado = v;
-                          tecnicoNomeSelecionado = tec['nome'];
-                        });
-                      },
-                    )),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
-              icon: const Icon(Icons.assignment_ind, color: Colors.white),
-              label: const Text('Atribuir', style: TextStyle(color: Colors.white)),
-              onPressed: tecnicoIdSelecionado == null
-                  ? null
-                  : () => Navigator.of(ctx).pop(true),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmou != true || tecnicoIdSelecionado == null || tecnicoNomeSelecionado == null) return;
-    if (!mounted) return;
-
-    final usuario = context.read<AuthProvider>().usuario;
-    if (usuario == null) return;
-
-    setState(() => _isLoading = true);
-    try {
-      await context.read<OcorrenciaProvider>().atribuirTecnico(
-            ocorrenciaId: ocorrencia.id,
-            tecnicoId: tecnicoIdSelecionado!,
-            tecnicoNome: tecnicoNomeSelecionado!,
-            usuario: usuario,
-          );
-
-      if (!mounted) return;
-      SnackbarHelper.showSnackbar(
-        context: context,
-        message: 'Ocorrência atribuída com sucesso a $tecnicoNomeSelecionado!',
+        message: 'Material entregue com sucesso! Manutenção liberada.',
         isSuccess: true,
       );
     } catch (e) {
@@ -235,14 +260,14 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
     final ocorrenciaProvider = context.watch<OcorrenciaProvider>();
     final todasOcorrencias = ocorrenciaProvider.ocorrencias;
 
-    // 1. Ocorrências aguardando material
-    final ocorrenciasAguardandoMaterial = todasOcorrencias
-        .where((o) => o.status == StatusOcorrencia.aguardandoMaterial)
+    // 1. Ocorrências críticas pendentes de aprovação ou designação
+    final ocorrenciasCriticasPendentes = todasOcorrencias
+        .where((o) => o.ehCritica && o.status != StatusOcorrencia.finalizada)
         .toList();
 
-    // 2. Ocorrências ativas elegíveis para atribuição de técnico (não finalizadas)
-    final ocorrenciasParaAtribuicao = todasOcorrencias
-        .where((o) => o.status != StatusOcorrencia.finalizada)
+    // 2. Ocorrências aguardando material
+    final ocorrenciasAguardandoMaterial = todasOcorrencias
+        .where((o) => o.status == StatusOcorrencia.aguardandoMaterial)
         .toList();
 
     return DefaultTabController(
@@ -251,20 +276,28 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
         appBar: AppBar(
           title: const Row(
             children: [
-              Icon(Icons.supervisor_account, color: Colors.white),
-              SizedBox(width: 8),
+              Icon(Icons.supervisor_account, color: Colors.purpleAccent),
+              SizedBox(width: 10),
               Text('Painel do Supervisor'),
             ],
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.analytics_outlined),
+              tooltip: 'Ir para Relatórios & KPIs',
+              onPressed: () => Navigator.of(context).pushNamed('/relatorios'),
+            ),
+          ],
           bottom: TabBar(
+            indicatorColor: Colors.purpleAccent,
             tabs: [
               Tab(
-                icon: const Icon(Icons.local_shipping),
-                text: 'Aguardando Material (${ocorrenciasAguardandoMaterial.length})',
+                icon: const Icon(Icons.gavel),
+                text: 'Aprovações Críticas (${ocorrenciasCriticasPendentes.length})',
               ),
               Tab(
-                icon: const Icon(Icons.assignment_ind),
-                text: 'Atribuir Técnicos (${ocorrenciasParaAtribuicao.length})',
+                icon: const Icon(Icons.local_shipping),
+                text: 'Suprir Materiais (${ocorrenciasAguardandoMaterial.length})',
               ),
             ],
           ),
@@ -273,14 +306,144 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
             ? const Center(child: CircularProgressIndicator())
             : TabBarView(
                 children: [
-                  // Aba 1: Entregar Materiais
+                  _buildAbaAprovacoes(context, ocorrenciasCriticasPendentes),
                   _buildAbaMateriais(context, ocorrenciasAguardandoMaterial),
-
-                  // Aba 2: Atribuir Técnicos
-                  _buildAbaAtribuicao(context, ocorrenciasParaAtribuicao),
                 ],
               ),
       ),
+    );
+  }
+
+  Widget _buildAbaAprovacoes(BuildContext context, List<Ocorrencia> lista) {
+    if (lista.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.verified_user_outlined, size: 64, color: Colors.purple.shade200),
+            const SizedBox(height: 16),
+            const Text(
+              'Nenhuma parada crítica pendente de aprovação.',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Paradas não-críticas são atendidas livremente pelos técnicos.',
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: lista.length,
+      itemBuilder: (ctx, index) {
+        final oc = lista[index];
+        final precisaAprovacao = oc.precisaAprovacao;
+
+        return Card(
+          elevation: 3,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: precisaAprovacao ? Colors.purpleAccent.shade400 : Colors.teal.shade300,
+              width: 1.5,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          precisaAprovacao ? Icons.pending_actions : Icons.verified,
+                          color: precisaAprovacao ? Colors.purpleAccent : Colors.tealAccent,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          oc.equipamentoTag,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.redAccent),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.error, size: 14, color: Colors.redAccent),
+                          SizedBox(width: 4),
+                          Text('Grau Crítico', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  oc.motivo,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  oc.descricao,
+                  style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                ),
+                const Divider(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          precisaAprovacao ? 'Status: Aguardando Aprovação' : 'Status: Aprovado p/ Manutenção',
+                          style: TextStyle(
+                            color: precisaAprovacao ? Colors.purpleAccent : Colors.tealAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        if (oc.tecnicoDesignado != null)
+                          Text(
+                            'Técnico Designado: ${oc.tecnicoDesignado}',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+                          ),
+                      ],
+                    ),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: precisaAprovacao ? Colors.purpleAccent.shade700 : Colors.indigo,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                      icon: Icon(precisaAprovacao ? Icons.gavel : Icons.edit, size: 16, color: Colors.white),
+                      label: Text(
+                        precisaAprovacao ? 'Aprovar & Designar' : 'Reatribuir Técnico',
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                      onPressed: () => _abrirModalAprovarEDesignar(context, oc),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -299,7 +462,7 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
             const SizedBox(height: 8),
             Text(
               'Todas as solicitações de peças e insumos foram atendidas.',
-              style: TextStyle(color: Colors.grey.shade600),
+              style: TextStyle(color: Colors.grey.shade500),
             ),
           ],
         ),
@@ -315,8 +478,8 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
           elevation: 2,
           margin: const EdgeInsets.only(bottom: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Colors.teal.shade200),
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.teal.shade400),
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -326,46 +489,47 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Chip(
-                      label: Text(
-                        oc.equipamentoTag,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      backgroundColor: Colors.teal.shade50,
+                    Text(
+                      oc.equipamentoTag,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
-                    Chip(
-                      label: Text(oc.prioridade),
-                      backgroundColor: oc.prioridade == 'Crítica'
-                          ? Colors.red.shade100
-                          : Colors.orange.shade100,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.amber),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.inventory_2, size: 14, color: Colors.amber),
+                          SizedBox(width: 4),
+                          Text('Aguardando Peças', style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
                   oc.motivo,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 if (oc.tecnicoResponsavel != null) ...[
                   const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.build_circle, size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text('Técnico Responsável: ${oc.tecnicoResponsavel}'),
-                    ],
+                  Text(
+                    'Técnico solicitante: ${oc.tecnicoResponsavel}',
+                    style: TextStyle(color: Colors.teal.shade300, fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                 ],
-                const Divider(height: 24),
+                const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-                    icon: const Icon(Icons.local_shipping, color: Colors.white),
-                    label: const Text(
-                      'Entregar Material',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                    icon: const Icon(Icons.local_shipping, size: 16, color: Colors.white),
+                    label: const Text('Entregar Material', style: TextStyle(color: Colors.white)),
                     onPressed: () => _abrirModalEntregarMaterial(context, oc),
                   ),
                 ),
@@ -376,121 +540,4 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
       },
     );
   }
-
-  Widget _buildAbaAtribuicao(BuildContext context, List<Ocorrencia> lista) {
-    if (lista.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.assignment_turned_in, size: 64, color: Colors.indigo.shade300),
-            const SizedBox(height: 16),
-            const Text(
-              'Nenhuma ocorrência pendente.',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: lista.length,
-      itemBuilder: (ctx, index) {
-        final oc = lista[index];
-        final temTecnico = oc.tecnicoResponsavel != null && oc.tecnicoResponsavel!.isNotEmpty;
-
-        return Card(
-          elevation: 2,
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: temTecnico ? Colors.grey.shade300 : Colors.orange.shade300,
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Chip(
-                          label: Text(
-                            oc.equipamentoTag,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Chip(
-                          label: Text(oc.status.nome),
-                          backgroundColor: oc.status.cor.withValues(alpha: 0.15),
-                          labelStyle: TextStyle(
-                            color: oc.status.cor,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Chip(
-                      label: Text(oc.prioridade),
-                      backgroundColor: oc.prioridade == 'Crítica'
-                          ? Colors.red.shade100
-                          : Colors.orange.shade100,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  oc.motivo,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      temTecnico ? Icons.check_circle : Icons.warning_amber_rounded,
-                      size: 16,
-                      color: temTecnico ? Colors.green : Colors.orange,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      temTecnico
-                          ? 'Técnico Responsável: ${oc.tecnicoResponsavel}'
-                          : 'Nenhum técnico atribuído ainda',
-                      style: TextStyle(
-                        fontWeight: temTecnico ? FontWeight.normal : FontWeight.bold,
-                        color: temTecnico ? null : Colors.orange.shade800,
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 24),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: temTecnico ? Colors.indigo.shade600 : Colors.indigo,
-                    ),
-                    icon: const Icon(Icons.assignment_ind, color: Colors.white),
-                    label: Text(
-                      temTecnico ? 'Reatribuir Técnico' : 'Atribuir Técnico',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    onPressed: () => _abrirModalAtribuirTecnico(context, oc),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
-
