@@ -553,7 +553,12 @@ class OcorrenciaProvider extends ChangeNotifier {
 
     final o = _ocorrencias[index];
 
-    // 1. Validação se a ocorrência é crítica
+    // 1. Validação se está pausada por falta de materiais
+    if (o.status == StatusOcorrencia.aguardandoMaterial) {
+      throw Exception('A manutenção está pausada por falta de material. É necessário que o Supervisor entregue o material solicitado para que o atendimento seja retomado.');
+    }
+
+    // 2. Validação se a ocorrência é crítica
     if (o.ehCritica) {
       if (!o.aprovadaManutencao) {
         throw Exception('Esta ocorrência é de grau Crítico e ainda necessita de APROVAÇÃO e designação do Supervisor antes de iniciar.');
@@ -569,10 +574,9 @@ class OcorrenciaProvider extends ChangeNotifier {
       }
     }
 
-    // 2. Validação de status para início
+    // 3. Validação de status para início
     if (o.status != StatusOcorrencia.aberta &&
-        o.status != StatusOcorrencia.aguardandoAprovacao &&
-        o.status != StatusOcorrencia.aguardandoMaterial) {
+        o.status != StatusOcorrencia.aguardandoAprovacao) {
       throw Exception('Esta ocorrência não pode ser assumida no status atual (${o.status.nome}).');
     }
 

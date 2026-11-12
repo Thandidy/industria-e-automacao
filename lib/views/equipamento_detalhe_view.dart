@@ -1106,11 +1106,33 @@ class _AcoesRBACCard extends StatelessWidget {
                   ),
                 ),
               ]
+              // Caso Intermediário: Pausada por Falta de Materiais (Bloqueia o Técnico até entrega do Supervisor)
+              else if (status == StatusEquipamento.aguardandoMaterial) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.amber.shade700, width: 1.5),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.inventory_2_outlined, color: Colors.amber, size: 24),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Manutenção Pausada por Falta de Materiais — O técnico não pode retomar o atendimento até que o Supervisor realize a entrega dos materiais solicitados.',
+                          style: TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ]
               // Caso B: Parada Crítica Aprovada
               else if (ehCritica && estaAprovada) ...[
                 if (status == StatusEquipamento.parada ||
-                    status == StatusEquipamento.aguardandoAprovacao ||
-                    status == StatusEquipamento.aguardandoMaterial) ...[
+                    status == StatusEquipamento.aguardandoAprovacao) ...[
                   if (souTecnicoDesignado)
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
@@ -1149,7 +1171,7 @@ class _AcoesRBACCard extends StatelessWidget {
               ]
               // Caso C: Parada Não-Crítica (Baixa, Média, Alta)
               else if (!ehCritica &&
-                  (status == StatusEquipamento.parada || status == StatusEquipamento.aguardandoMaterial) &&
+                  status == StatusEquipamento.parada &&
                   ocorrenciaAtiva != null) ...[
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(

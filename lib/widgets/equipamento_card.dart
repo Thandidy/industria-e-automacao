@@ -66,7 +66,7 @@ class EquipamentoCard extends StatelessWidget {
                   ],
                 ),
               ),
-            ] else if (equipamento.grauCritico && equipamento.aprovadaManutencao && equipamento.tecnicoDesignado != null && equipamento.status != StatusEquipamento.operando) ...[
+            ] else if (equipamento.grauCritico && equipamento.aprovadaManutencao && equipamento.tecnicoDesignado != null && equipamento.status != StatusEquipamento.operando && equipamento.status != StatusEquipamento.aguardandoMaterial) ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -83,6 +83,27 @@ class EquipamentoCard extends StatelessWidget {
                     Text(
                       'Designada ao técnico: ${equipamento.tecnicoDesignado}',
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.teal),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (equipamento.status == StatusEquipamento.aguardandoMaterial) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade700, width: 1),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.inventory_2, size: 14, color: Colors.amber),
+                    SizedBox(width: 6),
+                    Text(
+                      'Pausada — Aguardando entrega de materiais pelo Supervisor',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.amber),
                     ),
                   ],
                 ),

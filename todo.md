@@ -38,8 +38,9 @@ Este documento orienta a implementação completa das novas regras de negócio e
     - Outros técnicos recebem bloqueio/aviso amigável na tela.
   - [x] **Pausa por Materiais e Suprimento:**
     - Técnico pode pausar a manutenção por falta de materiais (`aguardandoMaterial`).
-    - Supervisor supre/entrega os materiais necessários no painel.
-    - Após entrega, técnico procede para finalizar a manutenção normalmente.
+    - **Bloqueio estrito de retomada:** O técnico fica bloqueado de continuar ou assumir o atendimento enquanto o status for `aguardandoMaterial`.
+    - Supervisor supre/entrega os materiais necessários no painel (`entregarMaterial`).
+    - Após o supervisor registrar a entrega, o atendimento é retomado automaticamente e o técnico pode proceder para finalizar a manutenção com laudo.
 
 ---
 

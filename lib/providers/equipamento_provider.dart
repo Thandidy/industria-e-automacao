@@ -7,15 +7,88 @@ import '../models/usuario.dart';
 import '../utils/constants.dart';
 
 class EquipamentoProvider extends ChangeNotifier {
+  // Existing fields
   List<Equipamento> _equipamentos = [];
   bool _isLoading = false;
+
+  // New business‑logic methods for critical approval workflow
+  /// Solicita aprovação de parada crítica para a máquina especificada.
+  /// Define o status como `aguardandoAprovacao` e mantém `aprovadaManutencao`
+  /// como false. Apenas supervisores devem chamar este método (verificação
+  /// de permissões deve ser feita na camada UI).
+  Future<void> solicitarAprovacao(String id) async {
+    final docRef = FirebaseFirestore.instance.collection('maquinas').doc(id);
+    await docRef.update({
+      'status': StatusEquipamento.aguardandoAprovacao.name,
+      'aprovadaManutencao': false,
+    });
+  }
+
+  /// Aprova a máquina crítica e designa um técnico responsável.
+  ///  - `tecnicoId` será armazenado em `tecnicoDesignadoId`.
+  ///  - O status volta para `parada` (pronto para manutenção).
+  Future<void> aprovarManutencao({
+    required String id,
+    required String tecnicoId,
+    required String tecnicoNome,
+  }) async {
+    final docRef = FirebaseFirestore.instance.collection('maquinas').doc(id);
+    await docRef.update({
+      'status': StatusEquipamento.parada.name,
+      'aprovadaManutencao': true,
+      'tecnicoDesignado': tecnicoNome,
+      'tecnicoDesignadoId': tecnicoId,
+    });
+  }
+
+  /// Inicia manutenção. Só permite se:
+  /// - A máquina não for crítica, OU
+  /// - A máquina crítica já estiver aprovada **e** o técnico designado for o
+  ///   usuário que está iniciando.
+  Future<void> iniciarManutencao({
+    required String id,
+    required String tecnicoId,
+  }) async {
+    final equipamento = _equipamentos.firstWhere((e) => e.id == id, orElse: () => throw Exception('Máquina não encontrada'));
+    if (equipamento.status == StatusEquipamento.aguardandoMaterial) {
+      throw Exception('A manutenção está pausada por falta de material. Aguarde o Supervisor suprir os materiais necessários.');
+    }
+    if (equipamento.grauCritico && !equipamento.aprovadaManutencao) {
+      throw Exception('A máquina está aguardando aprovação do supervisor');
+    }
+    if (equipamento.grauCritico && equipamento.tecnicoDesignadoId != tecnicoId) {
+      throw Exception('Apenas o técnico designado pode iniciar esta manutenção');
+    }
+    final docRef = FirebaseFirestore.instance.collection('maquinas').doc(id);
+    await docRef.update({
+      'status': StatusEquipamento.manutencao.name,
+    });
+  }
+
+  /// Pausa a manutenção por falta de material.
+  /// Mantém `aprovadaManutencao` como true e altera o status para
+  /// `aguardandoMaterial`.
+  Future<void> pausarPorMaterial({required String id}) async {
+    final docRef = FirebaseFirestore.instance.collection('maquinas').doc(id);
+    await docRef.update({
+      'status': StatusEquipamento.aguardandoMaterial.name,
+    });
+  }
+
+  /// O gestor ou supervisor entrega material e retoma a manutenção.
+  Future<void> retomarAposMaterial({required String id}) async {
+    final docRef = FirebaseFirestore.instance.collection('maquinas').doc(id);
+    await docRef.update({
+      'status': StatusEquipamento.manutencao.name,
+    });
+  }
 
   List<Equipamento> get equipamentos => _equipamentos;
   bool get isLoading => _isLoading;
 
   Map<String, Equipamento> get equipamentosPorId => {
-        for (final e in _equipamentos) e.id: e,
-      };
+    for (final e in _equipamentos) e.id: e,
+  };
 
   Map<StatusEquipamento, int> get statusCounts {
     final counts = <StatusEquipamento, int>{

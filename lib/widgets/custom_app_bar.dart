@@ -32,7 +32,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
           if (usuario != null) ...[
             CircleAvatar(
               radius: 18,
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              backgroundColor: _perfilCor(usuario!.perfil),
               child: Text(
                 usuario!.nome.isNotEmpty
                     ? usuario!.nome[0].toUpperCase()
@@ -84,13 +84,13 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   static Color _perfilCor(PerfilUsuario perfil) {
     switch (perfil) {
       case PerfilUsuario.operador:
-        return Colors.blue;
+        return const Color(0xFFF59E0B);
       case PerfilUsuario.tecnico:
-        return Colors.green;
+        return const Color(0xFF06B6D4);
       case PerfilUsuario.supervisor:
-        return Colors.orange;
+        return const Color(0xFF6366F1);
       case PerfilUsuario.gestor:
-        return Colors.purple;
+        return const Color(0xFF10B981);
     }
   }
 }

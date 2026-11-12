@@ -228,74 +228,6 @@ class _DashboardViewState extends State<DashboardView> {
 
 /// Banner de identidade visual do perfil logado e atalhos rápidos das abas do cargo.
 class _RoleHeaderBanner extends StatelessWidget {
-  final String userName; // already in uppercase when passed
-  final String roleTitle; // raw title e.g., "Gestor Industrial Executivo"
-  final String roleDescription; // description text for the role
-  final Color roleColor;
-
-  const _RoleHeaderBanner({
-    required this.userName,
-    required this.roleTitle,
-    required this.roleDescription,
-    required this.roleColor,
-    Key? key,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    // First line: user name in bold, same as before
-    // Second line: role initial letter + role title, both in role color
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          userName,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            CircleAvatar(
-              radius: 12,
-              backgroundColor: roleColor.withValues(alpha: 0.25),
-              child: Text(
-                roleTitle.isNotEmpty ? roleTitle[0].toUpperCase() : "",
-                style: TextStyle(
-                  color: roleColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              roleTitle.toUpperCase(),
-              style: TextStyle(
-                color: roleColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 11,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          roleDescription,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
   final Usuario usuario;
 
   const _RoleHeaderBanner({required this.usuario});
@@ -363,7 +295,7 @@ class _RoleHeaderBanner extends StatelessWidget {
         break;
 
       case PerfilUsuario.gestor:
-        roleColor = const Color(0xFF10B981); // Esmeralda / Ouro
+        roleColor = const Color(0xFF10B981); // Esmeralda
         roleIcon = Icons.admin_panel_settings;
         roleTitle = 'Gestor Industrial Executivo';
         roleDescription = 'Governança de ativos industriais: Gestão de máquinas e análise de relatórios & KPIs.';
@@ -411,12 +343,61 @@ class _RoleHeaderBanner extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Unified role header banner: left letter initial, right role title in same color
-          _RoleHeaderBanner(
-            userName: usuario.nome,
-            roleTitle: roleTitle,
-            roleDescription: roleDescription,
-            roleColor: roleColor,
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: roleColor.withValues(alpha: 0.2),
+                child: Icon(roleIcon, color: roleColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          usuario.nome.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: roleColor.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: roleColor.withValues(alpha: 0.5)),
+                          ),
+                          child: Text(
+                            roleTitle.toUpperCase(),
+                            style: TextStyle(
+                              color: roleColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      roleDescription,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           const Divider(height: 1),
@@ -445,180 +426,6 @@ class _RoleHeaderBanner extends StatelessWidget {
 }
 
 class _QuickActionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  final bool isCurrent;
-
-  const _QuickActionButton({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-    this.isCurrent = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton.icon(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: isCurrent ? color.withValues(alpha: 0.25) : color,
-        foregroundColor: isCurrent ? color : Colors.white,
-        elevation: isCurrent ? 0 : 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: isCurrent ? BorderSide(color: color, width: 1.5) : BorderSide.none,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      ),
-      icon: Icon(icon, size: 18),
-      label: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-      ),
-      onPressed: isCurrent ? null : onTap,
-    );
-  }
-}
-
-// New unified role header banner widget
-class _RoleHeaderBanner extends StatelessWidget {
-  final String userName; // already in uppercase when passed
-  final String roleTitle; // raw title e.g., "Gestor Industrial Executivo"
-  final String roleDescription; // description text for the role
-  final Color roleColor;
-
-  const _RoleHeaderBanner({
-    required this.userName,
-    required this.roleTitle,
-    required this.roleDescription,
-    required this.roleColor,
-    Key? key,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    // First line: user name in bold, same as before
-    // Second line: role initial letter + role title, both in role color
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          userName,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            CircleAvatar(
-              radius: 12,
-              backgroundColor: roleColor.withValues(alpha: 0.25),
-              child: Text(
-                roleTitle.isNotEmpty ? roleTitle[0].toUpperCase() : "",
-                style: TextStyle(
-                  color: roleColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              roleTitle.toUpperCase(),
-              style: TextStyle(
-                color: roleColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 11,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          roleDescription,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-  final String userName; // already in uppercase when passed
-  final String roleTitle; // raw title e.g., "Gestor Industrial Executivo"
-  final Color roleColor;
-
-  const _RoleHeaderBanner({
-    required this.userName,
-    required this.roleTitle,
-    required this.roleColor,
-    Key? key,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    // First line: user name in bold, same as before
-    // Second line: role initial letter + role title, both in role color
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          userName,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            CircleAvatar(
-              radius: 12,
-              backgroundColor: roleColor.withValues(alpha: 0.25),
-              child: Text(
-                roleTitle.isNotEmpty ? roleTitle[0].toUpperCase() : "",
-                style: TextStyle(
-                  color: roleColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              roleTitle.toUpperCase(),
-              style: TextStyle(
-                color: roleColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 11,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          roleDescription,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-
   final String label;
   final IconData icon;
   final Color color;

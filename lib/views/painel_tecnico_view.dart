@@ -664,10 +664,24 @@ class _ListaOcorrencias extends StatelessWidget {
                         onPressed: () => onFinalizarAtendimento(ocorrencia),
                       ),
                     ] else if (estaAguardandoMaterial) ...[
-                      const Chip(
-                        avatar: Icon(Icons.inventory_2, size: 14, color: Colors.amber),
-                        label: Text('Aguardando Entrega de Material', style: TextStyle(color: Colors.amber, fontSize: 12)),
-                        backgroundColor: Colors.transparent,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.amber.shade700),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.inventory_2, size: 14, color: Colors.amber),
+                            SizedBox(width: 6),
+                            Text(
+                              'Pausada — Aguardando Supervisor Entregar Material',
+                              style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
                       ),
                     ] else if (precisaAprovacao) ...[
                       ElevatedButton.icon(
