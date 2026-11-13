@@ -177,10 +177,10 @@ class OcorrenciaProvider extends ChangeNotifier {
   StatusEquipamento _parseStatus(String? status) {
     if (status == null) return StatusEquipamento.operando;
     final s = status.toLowerCase().replaceAll('_', '').replaceAll(' ', '');
+    if (s.contains('aprovac') || s == 'aguardandoaprovacao') return StatusEquipamento.aguardandoAprovacao;
+    if (s.contains('material') || s == 'aguardandomaterial') return StatusEquipamento.aguardandoMaterial;
     if (s.contains('parada') || s.contains('parado')) return StatusEquipamento.parada;
     if (s.contains('manutenc')) return StatusEquipamento.manutencao;
-    if (s.contains('material') || s.contains('aguardando')) return StatusEquipamento.aguardandoMaterial;
-    if (s.contains('aprovac')) return StatusEquipamento.aguardandoAprovacao;
     if (s.contains('indisponivel')) return StatusEquipamento.indisponivel;
     return StatusEquipamento.operando;
   }
@@ -306,6 +306,8 @@ class OcorrenciaProvider extends ChangeNotifier {
       'aprovadaManutencao': !ehCritica,
       'tecnicoDesignado': null,
       'tecnicoDesignadoId': null,
+      'solicitouMaterial': false,
+      'motivoPausaMaterial': null,
       'ultimaParada': FieldValue.serverTimestamp(),
       'ultimoAtualizacao': FieldValue.serverTimestamp(),
       'numeroParadas': FieldValue.increment(1),
@@ -336,7 +338,18 @@ class OcorrenciaProvider extends ChangeNotifier {
         );
 
       await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
+        'solicitarAtendimentoUrgente': true,
+        'dataSolicitacaoUrgente': FieldValue.serverTimestamp(),
+        'solicitanteUrgencia': usuario.nome,
+        'solicitanteUrgenciaId': usuario.id,
         'historico': historico.map((h) => h.toJson()).toList(),
+      });
+
+      await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+        'solicitarAtendimentoUrgente': true,
+        'dataSolicitacaoUrgente': FieldValue.serverTimestamp(),
+        'solicitanteUrgencia': usuario.nome,
+        'ultimoAtualizacao': FieldValue.serverTimestamp(),
       });
     }
   }
@@ -360,6 +373,12 @@ class OcorrenciaProvider extends ChangeNotifier {
     if (index == -1) throw Exception('Ocorrência não encontrada.');
 
     final o = _ocorrencias[index];
+
+    // REGRA DE NEGÓCIO: O supervisor só pode designar técnicos em casos de paradas críticas
+    if (!o.ehCritica) {
+      throw Exception('Regra de negócio: A designação de técnicos pelo supervisor é permitida exclusivamente em paradas de grau Crítico. Nas demais ocorrências, os técnicos assumem livremente.');
+    }
+
     final agora = DateTime.now();
 
     final historicoAtualizado = List<HistoricoItem>.from(o.historico)
@@ -429,11 +448,15 @@ class OcorrenciaProvider extends ChangeNotifier {
 
     await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
       'status': StatusOcorrencia.emAndamento.index,
+      'solicitouMaterial': false,
+      'motivoPausaMaterial': null,
       'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
     });
 
     await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
       'status': StatusEquipamento.manutencao.name,
+      'solicitouMaterial': false,
+      'motivoPausaMaterial': null,
       'motivoParada': 'Material entregue — manutenção retomada',
       'ultimoAtualizacao': FieldValue.serverTimestamp(),
     });
@@ -563,15 +586,11 @@ class OcorrenciaProvider extends ChangeNotifier {
       if (!o.aprovadaManutencao) {
         throw Exception('Esta ocorrência é de grau Crítico e ainda necessita de APROVAÇÃO e designação do Supervisor antes de iniciar.');
       }
+    }
 
-      // Validação do técnico designado exclusivo
-      final idBate = o.tecnicoDesignadoId != null && o.tecnicoDesignadoId == usuario.id;
-      final nomeBate = o.tecnicoDesignado != null &&
-          o.tecnicoDesignado!.trim().toLowerCase() == usuario.nome.trim().toLowerCase();
-
-      if (!idBate && !nomeBate) {
-        throw Exception('Acesso restrito: Esta manutenção crítica foi designada exclusivamente para o técnico "${o.tecnicoDesignado ?? 'Designado'}".');
-      }
+    // Regra: Se um técnico foi designado especificamente para a manutenção, outro não pode assumir
+    if (o.temTecnicoDesignado && !o.ehTecnicoDesignado(usuario)) {
+      throw Exception('Acesso restrito: Esta manutenção foi designada especificamente para o técnico "${o.tecnicoDesignado ?? 'Designado'}". Outro técnico não pode assumi-la.');
     }
 
     // 3. Validação de status para início
@@ -637,11 +656,15 @@ class OcorrenciaProvider extends ChangeNotifier {
 
     await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
       'status': StatusOcorrencia.aguardandoMaterial.index,
+      'solicitouMaterial': true,
+      'motivoPausaMaterial': motivoPausa,
       'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
     });
 
     await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
       'status': StatusEquipamento.aguardandoMaterial.name,
+      'solicitouMaterial': true,
+      'motivoPausaMaterial': motivoPausa,
       'ultimoAtualizacao': FieldValue.serverTimestamp(),
     });
   }
@@ -684,7 +707,14 @@ class OcorrenciaProvider extends ChangeNotifier {
       'status': StatusOcorrencia.finalizada.index,
       'dataFim': agora.toIso8601String(),
       'observacaoFinal': laudoTecnico.trim(),
+      'laudoTecnico': laudoTecnico.trim(),
+      'parecerTecnico': laudoTecnico.trim(),
+      'tecnicoFinalizou': usuario.nome,
+      'tecnicoFinalizouId': usuario.id,
+      'tecnicoResponsavel': o.tecnicoResponsavel ?? usuario.nome,
       'pecasTrocadas': pecasTrocadas,
+      'solicitouMaterial': false,
+      'motivoPausaMaterial': null,
       'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
     });
 
@@ -696,6 +726,12 @@ class OcorrenciaProvider extends ChangeNotifier {
       'aprovadaManutencao': false,
       'tecnicoDesignado': null,
       'tecnicoDesignadoId': null,
+      'tecnicoFinalizou': usuario.nome,
+      'tecnicoResponsavel': o.tecnicoResponsavel ?? usuario.nome,
+      'laudoTecnico': laudoTecnico.trim(),
+      'parecerTecnico': laudoTecnico.trim(),
+      'solicitouMaterial': false,
+      'motivoPausaMaterial': null,
       'ultimoAtualizacao': FieldValue.serverTimestamp(),
     });
   }

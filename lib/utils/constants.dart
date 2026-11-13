@@ -219,27 +219,29 @@ extension StatusOcorrenciaExtension on StatusOcorrencia {
 // ===== Cores =====
 
 class AppCores {
-  // Tema industrial escuro
-  static const Color background = Color(0xFF1A1D23);
-  static const Color surface = Color(0xFF252A33);
-  static const Color surfaceVariant = Color(0xFF3A404D);
-  static const Color onBackground = Color(0xFFE8ECEF);
-  static const Color onSurface = Color(0xFFE8ECEF);
-  static const Color onSurfaceVariant = Color(0xFFB8C1D0);
+  // Base Branco e Roxo Corporativo (SIGE - Alta Legibilidade)
+  static const Color background = Color(0xFFF8F9FD); // Fundo limpo, claro e suave
+  static const Color surface = Color(0xFFFFFFFF); // Branco puro para cards e modais
+  static const Color surfaceVariant = Color(0xFFF1F3F9); // Elementos secundários suaves
+  static const Color border = Color(0xFFE2E8F0); // Borda sutil e elegante
+  static const Color onBackground = Color(0xFF1E1B4B); // Texto escuro (Deep Indigo)
+  static const Color onSurface = Color(0xFF1E1B4B); // Texto principal cristalino
+  static const Color onSurfaceVariant = Color(0xFF64748B); // Texto secundário (Slate 500)
 
-  // Azul petróleo
-  static const Color primary = Color(0xFF1E3A5F);
-  static const Color primaryVariant = Color(0xFF152A42);
+  // Roxo Corporativo SIGE (Identidade Visual dos Menus e Destaques)
+  static const Color primary = Color(0xFF6D28D9); // Roxo vibrante e moderno (Purple 700)
+  static const Color primaryVariant = Color(0xFF581C87); // Roxo profundo para contrastes (Purple 900)
+  static const Color primaryLight = Color(0xFFEDE9FE); // Roxo pastel para badges e highlights
 
-  // Detalhes
-  static const Color amareloAlerta = Color(0xFFFFC107);
-  static const Color laranjaAlerta = Color(0xFFFF9800);
+  // Detalhes e Alertas
+  static const Color amareloAlerta = Color(0xFFF59E0B);
+  static const Color laranjaAlerta = Color(0xFFEA580C);
 
-  // Status
-  static const Color operando = Color(0xFF4CAF50);
-  static const Color parada = Color(0xFFFF5722);
-  static const Color manutencao = Color(0xFF2196F3);
-  static const Color aguardandoMaterial = Color(0xFFFF9800);
-  static const Color aguardandoAprovacao = Color(0xFF9C27B0);
-  static const Color indisponivel = Color(0xFF607D8B);
+  // Status Funcionais Preservados (Cores de cada função intactas)
+  static const Color operando = Color(0xFF16A34A); // Verde
+  static const Color parada = Color(0xFFDC2626); // Vermelho
+  static const Color manutencao = Color(0xFF2563EB); // Azul
+  static const Color aguardandoMaterial = Color(0xFFD97706); // Âmbar / Laranja
+  static const Color aguardandoAprovacao = Color(0xFF7C3AED); // Roxo
+  static const Color indisponivel = Color(0xFF64748B); // Cinza
 }

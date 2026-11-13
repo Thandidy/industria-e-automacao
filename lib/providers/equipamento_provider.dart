@@ -56,8 +56,12 @@ class EquipamentoProvider extends ChangeNotifier {
     if (equipamento.grauCritico && !equipamento.aprovadaManutencao) {
       throw Exception('A máquina está aguardando aprovação do supervisor');
     }
-    if (equipamento.grauCritico && equipamento.tecnicoDesignadoId != tecnicoId) {
-      throw Exception('Apenas o técnico designado pode iniciar esta manutenção');
+    // Regra: Se um técnico foi designado especificamente, outro não pode iniciar/assumir
+    if (equipamento.temTecnicoDesignado &&
+        equipamento.tecnicoDesignadoId != null &&
+        equipamento.tecnicoDesignadoId!.isNotEmpty &&
+        equipamento.tecnicoDesignadoId != tecnicoId) {
+      throw Exception('Apenas o técnico designado (${equipamento.tecnicoDesignado ?? 'Designado'}) pode iniciar esta manutenção');
     }
     final docRef = FirebaseFirestore.instance.collection('maquinas').doc(id);
     await docRef.update({
@@ -164,10 +168,10 @@ class EquipamentoProvider extends ChangeNotifier {
   StatusEquipamento _parseStatus(String? status) {
     if (status == null) return StatusEquipamento.operando;
     final s = status.toLowerCase().replaceAll('_', '').replaceAll(' ', '');
+    if (s.contains('aprovac') || s == 'aguardandoaprovacao') return StatusEquipamento.aguardandoAprovacao;
+    if (s.contains('material') || s == 'aguardandomaterial') return StatusEquipamento.aguardandoMaterial;
     if (s.contains('parada') || s.contains('parado')) return StatusEquipamento.parada;
     if (s.contains('manutenc')) return StatusEquipamento.manutencao;
-    if (s.contains('material') || s.contains('aguardando')) return StatusEquipamento.aguardandoMaterial;
-    if (s.contains('aprovac')) return StatusEquipamento.aguardandoAprovacao;
     if (s.contains('indisponivel')) return StatusEquipamento.indisponivel;
     return StatusEquipamento.operando;
   }

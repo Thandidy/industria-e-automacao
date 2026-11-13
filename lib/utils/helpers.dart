@@ -49,6 +49,8 @@ extension StringToStatusEquipamento on String {
         return StatusEquipamento.manutencao;
       case 'aguardandomaterial':
         return StatusEquipamento.aguardandoMaterial;
+      case 'aguardandoaprovacao':
+        return StatusEquipamento.aguardandoAprovacao;
       case 'indisponivel':
         return StatusEquipamento.indisponivel;
       default:

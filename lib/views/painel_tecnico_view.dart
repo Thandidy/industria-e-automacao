@@ -547,19 +547,12 @@ class _ListaOcorrencias extends StatelessWidget {
         final estaAguardandoMaterial = ocorrencia.status == StatusOcorrencia.aguardandoMaterial;
         final estaFinalizada = ocorrencia.status == StatusOcorrencia.finalizada;
 
-        // Regra de Aprovação Crítica:
+        // Regra de Aprovação Crítica e Designação de Técnico:
         final precisaAprovacao = ocorrencia.precisaAprovacao;
         final ehCritica = ocorrencia.ehCritica;
 
-        // Se for crítica e aprovada, verificar se o usuário logado é o técnico designado:
-        bool ehTecnicoDesignado = false;
-        if (ehCritica && ocorrencia.aprovadaManutencao && usuarioLogado != null) {
-          final idBate = ocorrencia.tecnicoDesignadoId != null &&
-              ocorrencia.tecnicoDesignadoId == usuarioLogado!.id;
-          final nomeBate = ocorrencia.tecnicoDesignado != null &&
-              ocorrencia.tecnicoDesignado!.trim().toLowerCase() == usuarioLogado!.nome.trim().toLowerCase();
-          ehTecnicoDesignado = idBate || nomeBate;
-        }
+        final temTecnicoDesignado = ocorrencia.temTecnicoDesignado;
+        final ehTecnicoDesignado = ocorrencia.ehTecnicoDesignado(usuarioLogado);
 
         return Card(
           margin: const EdgeInsets.only(bottom: 14),
@@ -750,31 +743,30 @@ class _ListaOcorrencias extends StatelessWidget {
                         label: const Text('Aguardando Aprovação do Supervisor', style: TextStyle(color: Colors.purpleAccent, fontSize: 12)),
                         onPressed: null,
                       ),
-                    ] else if (ehCritica && ocorrencia.aprovadaManutencao && !ehTecnicoDesignado) ...[
+                    ] else if (temTecnicoDesignado && !ehTecnicoDesignado) ...[
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.grey.withValues(alpha: 0.2),
+                          disabledBackgroundColor: Colors.grey.withValues(alpha: 0.15),
+                          disabledForegroundColor: Colors.white54,
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
-                        icon: const Icon(Icons.person, size: 16, color: Colors.white70),
-                        label: Text('Exclusivo: ${ocorrencia.tecnicoDesignado}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Esta manutenção crítica foi designada exclusivamente para o técnico "${ocorrencia.tecnicoDesignado}".'),
-                              backgroundColor: Colors.orange.shade800,
-                            ),
-                          );
-                        },
+                        icon: const Icon(Icons.lock, size: 16, color: Colors.white54),
+                        label: Text('Bloqueado: Designado a ${ocorrencia.tecnicoDesignado}',
+                            style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        onPressed: null,
                       ),
                     ] else ...[
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor: temTecnicoDesignado ? Colors.teal.shade700 : Theme.of(context).colorScheme.primary,
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         ),
-                        icon: const Icon(Icons.play_circle_fill, size: 16, color: Colors.white),
-                        label: const Text('Iniciar Atendimento', style: TextStyle(color: Colors.white, fontSize: 12)),
+                        icon: Icon(temTecnicoDesignado ? Icons.play_arrow : Icons.play_circle_fill, size: 16, color: Colors.white),
+                        label: Text(
+                          temTecnicoDesignado ? 'Iniciar Atendimento (Designado a Você)' : 'Iniciar Atendimento',
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
                         onPressed: () => onIniciarAtendimento(ocorrencia),
                       ),
                     ],

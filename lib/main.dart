@@ -34,7 +34,7 @@ class MyApp extends StatelessWidget {
           return MaterialApp(
             title: 'SIGE - Indústria & Manutenção',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.darkTheme,
+            theme: AppTheme.lightTheme,
             initialRoute: '/login',
             onGenerateRoute: (settings) => RouteGuard.onGenerateRoute(settings, context),
           );

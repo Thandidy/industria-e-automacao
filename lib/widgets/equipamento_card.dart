@@ -66,7 +66,7 @@ class EquipamentoCard extends StatelessWidget {
                   ],
                 ),
               ),
-            ] else if (equipamento.grauCritico && equipamento.aprovadaManutencao && equipamento.tecnicoDesignado != null && equipamento.status != StatusEquipamento.operando && equipamento.status != StatusEquipamento.aguardandoMaterial) ...[
+            ] else if (equipamento.temTecnicoDesignado && equipamento.status != StatusEquipamento.operando && equipamento.status != StatusEquipamento.aguardandoMaterial) ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

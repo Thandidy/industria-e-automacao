@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../models/usuario.dart';
 import '../utils/constants.dart';
 
 class Equipamento {
@@ -21,6 +22,7 @@ class Equipamento {
   final double tempoOperacaoTotal;
   final int numeroParadas;
   final int tempoParado;
+  final bool solicitouMaterial;
 
   Equipamento({
     required this.id,
@@ -39,6 +41,7 @@ class Equipamento {
     this.tempoOperacaoTotal = 0.0,
     this.numeroParadas = 0,
     this.tempoParado = 0,
+    this.solicitouMaterial = false,
   });
 
   factory Equipamento.vazio(String id) {
@@ -79,6 +82,7 @@ class Equipamento {
     double? tempoOperacaoTotal,
     int? numeroParadas,
     int? tempoParado,
+    bool? solicitouMaterial,
   }) {
     return Equipamento(
       id: id ?? this.id,
@@ -97,13 +101,32 @@ class Equipamento {
       tempoOperacaoTotal: tempoOperacaoTotal ?? this.tempoOperacaoTotal,
       numeroParadas: numeroParadas ?? this.numeroParadas,
       tempoParado: tempoParado ?? this.tempoParado,
+      solicitouMaterial: solicitouMaterial ?? this.solicitouMaterial,
     );
+  }
+
+  /// Verifica se há um técnico especificamente designado para este equipamento
+  bool get temTecnicoDesignado =>
+      (tecnicoDesignadoId != null && tecnicoDesignadoId!.trim().isNotEmpty) ||
+      (tecnicoDesignado != null && tecnicoDesignado!.trim().isNotEmpty);
+
+  /// Verifica se o usuário informado é o técnico especificamente designado
+  bool ehTecnicoDesignado(Usuario? usuario) {
+    if (usuario == null || !temTecnicoDesignado) return false;
+    final idBate = tecnicoDesignadoId != null &&
+        tecnicoDesignadoId!.trim().isNotEmpty &&
+        tecnicoDesignadoId == usuario.id;
+    final nomeBate = tecnicoDesignado != null &&
+        tecnicoDesignado!.trim().isNotEmpty &&
+        tecnicoDesignado!.trim().toLowerCase() == usuario.nome.trim().toLowerCase();
+    return idBate || nomeBate;
   }
 
   /// Nome formatado do status com destaque para o estado crítico
   String get statusNome {
     // Estado X: Parada crítica pendente de aprovação do supervisor
-    if (status == StatusEquipamento.aguardandoAprovacao || (grauCritico && !aprovadaManutencao && status == StatusEquipamento.parada)) {
+    if (status == StatusEquipamento.aguardandoAprovacao ||
+        (grauCritico && !aprovadaManutencao && status != StatusEquipamento.operando)) {
       return 'Aguardando Aprovação';
     }
     // Estado Y: Parada crítica já aprovada com técnico designado
@@ -119,7 +142,8 @@ class Equipamento {
   /// Ícone dinâmico: Estado X (precisa de aprovação) vs Estado Y (aprovada para manutenção)
   IconData get statusIcon {
     // Estado X: Precisa de aprovação pelo supervisor para manutenção
-    if (status == StatusEquipamento.aguardandoAprovacao || (grauCritico && !aprovadaManutencao && status == StatusEquipamento.parada)) {
+    if (status == StatusEquipamento.aguardandoAprovacao ||
+        (grauCritico && !aprovadaManutencao && status != StatusEquipamento.operando)) {
       return Icons.pending_actions; // Ícone X: Aguardando aprovação
     }
     // Estado Y: Aprovada para manutenção com técnico designado
@@ -132,7 +156,8 @@ class Equipamento {
   /// Cor dinâmica de status
   Color get statusColor {
     // Estado X: Alerta em cor âmbar/roxo
-    if (status == StatusEquipamento.aguardandoAprovacao || (grauCritico && !aprovadaManutencao && status == StatusEquipamento.parada)) {
+    if (status == StatusEquipamento.aguardandoAprovacao ||
+        (grauCritico && !aprovadaManutencao && status != StatusEquipamento.operando)) {
       return AppCores.aguardandoAprovacao;
     }
     // Estado Y: Destaque positivo em ciano/teal para aprovação concedida
@@ -173,6 +198,7 @@ class Equipamento {
       'tempoOperacaoTotal': tempoOperacaoTotal,
       'numeroParadas': numeroParadas,
       'tempoParado': tempoParado,
+      'solicitouMaterial': solicitouMaterial,
     };
   }
 
@@ -194,6 +220,9 @@ class Equipamento {
       tempoOperacaoTotal: (json['tempoOperacaoTotal'] ?? 0).toDouble(),
       numeroParadas: json['numeroParadas'] ?? 0,
       tempoParado: json['tempoParado'] ?? 0,
+      solicitouMaterial: json['solicitouMaterial'] == true ||
+          json['status'] == StatusEquipamento.aguardandoMaterial.index ||
+          json['status']?.toString() == 'aguardandoMaterial',
     );
   }
 }

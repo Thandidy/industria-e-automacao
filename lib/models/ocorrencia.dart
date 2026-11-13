@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/historico.dart';
+import '../models/usuario.dart';
 import '../utils/constants.dart';
 
 class Ocorrencia {
@@ -20,10 +21,14 @@ class Ocorrencia {
   final DateTime? dataInicio;
   final DateTime? dataFim;
   final String? tecnicoResponsavel;
+  final String? tecnicoFinalizou;
   final String? observacaoFinal;
+  final String? laudoTecnico;
   final List<String> pecasTrocadas;
   final DateTime? proximaManutencao;
   final List<HistoricoItem> historico;
+  final bool solicitouMaterial;
+  final String? motivoPausaMaterial;
 
   Ocorrencia({
     String? id,
@@ -40,15 +45,36 @@ class Ocorrencia {
     this.dataInicio,
     this.dataFim,
     this.tecnicoResponsavel,
+    this.tecnicoFinalizou,
     this.observacaoFinal,
+    this.laudoTecnico,
     this.pecasTrocadas = const [],
     this.proximaManutencao,
     List<HistoricoItem>? historico,
+    this.solicitouMaterial = false,
+    this.motivoPausaMaterial,
   }) : id = id ?? const Uuid().v4(),
        historico = historico ?? [];
 
   bool get ehCritica => prioridade.toLowerCase().trim() == 'crítica' || prioridade.toLowerCase().trim() == 'critica';
   bool get precisaAprovacao => ehCritica && !aprovadaManutencao && status != StatusOcorrencia.finalizada;
+
+  /// Verifica se há um técnico especificamente designado para esta manutenção
+  bool get temTecnicoDesignado =>
+      (tecnicoDesignadoId != null && tecnicoDesignadoId!.trim().isNotEmpty) ||
+      (tecnicoDesignado != null && tecnicoDesignado!.trim().isNotEmpty);
+
+  /// Verifica se o usuário informado é o técnico especificamente designado
+  bool ehTecnicoDesignado(Usuario? usuario) {
+    if (usuario == null || !temTecnicoDesignado) return false;
+    final idBate = tecnicoDesignadoId != null &&
+        tecnicoDesignadoId!.trim().isNotEmpty &&
+        tecnicoDesignadoId == usuario.id;
+    final nomeBate = tecnicoDesignado != null &&
+        tecnicoDesignado!.trim().isNotEmpty &&
+        tecnicoDesignado!.trim().toLowerCase() == usuario.nome.trim().toLowerCase();
+    return idBate || nomeBate;
+  }
 
   String get duracaoSegundos {
     if (dataInicio == null) return '0';
@@ -136,10 +162,14 @@ class Ocorrencia {
     DateTime? dataInicio,
     DateTime? dataFim,
     String? tecnicoResponsavel,
+    String? tecnicoFinalizou,
     String? observacaoFinal,
+    String? laudoTecnico,
     List<String>? pecasTrocadas,
     DateTime? proximaManutencao,
     List<HistoricoItem>? historico,
+    bool? solicitouMaterial,
+    String? motivoPausaMaterial,
   }) {
     return Ocorrencia(
       id: id ?? this.id,
@@ -156,10 +186,14 @@ class Ocorrencia {
       dataInicio: dataInicio ?? this.dataInicio,
       dataFim: dataFim ?? this.dataFim,
       tecnicoResponsavel: tecnicoResponsavel ?? this.tecnicoResponsavel,
+      tecnicoFinalizou: tecnicoFinalizou ?? this.tecnicoFinalizou,
       observacaoFinal: observacaoFinal ?? this.observacaoFinal,
+      laudoTecnico: laudoTecnico ?? this.laudoTecnico,
       pecasTrocadas: pecasTrocadas ?? this.pecasTrocadas,
       proximaManutencao: proximaManutencao ?? this.proximaManutencao,
       historico: historico ?? this.historico,
+      solicitouMaterial: solicitouMaterial ?? this.solicitouMaterial,
+      motivoPausaMaterial: motivoPausaMaterial ?? this.motivoPausaMaterial,
     );
   }
 
@@ -179,10 +213,15 @@ class Ocorrencia {
       'dataInicio': dataInicio?.toIso8601String(),
       'dataFim': dataFim?.toIso8601String(),
       'tecnicoResponsavel': tecnicoResponsavel,
+      'tecnicoFinalizou': tecnicoFinalizou ?? tecnicoResponsavel,
       'observacaoFinal': observacaoFinal,
+      'laudoTecnico': laudoTecnico ?? observacaoFinal,
+      'parecerTecnico': laudoTecnico ?? observacaoFinal,
       'pecasTrocadas': pecasTrocadas,
       'proximaManutencao': proximaManutencao?.toIso8601String(),
       'historico': historico.map((h) => h.toJson()).toList(),
+      'solicitouMaterial': solicitouMaterial,
+      'motivoPausaMaterial': motivoPausaMaterial,
     };
   }
 
@@ -201,13 +240,19 @@ class Ocorrencia {
       dataAbertura: DateTime.parse(json['dataAbertura'] ?? DateTime.now().toIso8601String()),
       dataInicio: json['dataInicio'] != null ? DateTime.parse(json['dataInicio']) : null,
       dataFim: json['dataFim'] != null ? DateTime.parse(json['dataFim']) : null,
-      tecnicoResponsavel: json['tecnicoResponsavel'],
-      observacaoFinal: json['observacaoFinal'],
+      tecnicoResponsavel: json['tecnicoResponsavel']?.toString(),
+      tecnicoFinalizou: json['tecnicoFinalizou']?.toString() ?? json['tecnicoResponsavel']?.toString(),
+      observacaoFinal: json['observacaoFinal']?.toString(),
+      laudoTecnico: json['laudoTecnico']?.toString() ?? json['parecerTecnico']?.toString() ?? json['observacaoFinal']?.toString(),
       pecasTrocadas: List<String>.from(json['pecasTrocadas'] ?? []),
       proximaManutencao: json['proximaManutencao'] != null ? DateTime.parse(json['proximaManutencao']) : null,
       historico: (json['historico'] as List? ?? [])
           .map((h) => HistoricoItem.fromJson(h))
           .toList(),
+      solicitouMaterial: json['solicitouMaterial'] == true ||
+          json['status'] == StatusOcorrencia.aguardandoMaterial.index ||
+          json['status']?.toString() == 'aguardandoMaterial',
+      motivoPausaMaterial: json['motivoPausaMaterial']?.toString(),
     );
   }
 }

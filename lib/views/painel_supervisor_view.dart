@@ -276,27 +276,32 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
         appBar: AppBar(
           title: const Row(
             children: [
-              Icon(Icons.supervisor_account, color: Colors.purpleAccent),
+              Icon(Icons.supervisor_account, color: Colors.white),
               SizedBox(width: 10),
-              Text('Painel do Supervisor'),
+              Text('Painel do Supervisor', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ],
           ),
           actions: [
             IconButton(
-              icon: const Icon(Icons.analytics_outlined),
+              icon: const Icon(Icons.analytics_outlined, color: Colors.white),
               tooltip: 'Ir para Relatórios & KPIs',
               onPressed: () => Navigator.of(context).pushNamed('/relatorios'),
             ),
           ],
           bottom: TabBar(
-            indicatorColor: Colors.purpleAccent,
+            indicatorColor: Colors.white,
+            indicatorWeight: 3.5,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white.withValues(alpha: 0.75),
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             tabs: [
               Tab(
-                icon: const Icon(Icons.gavel),
+                icon: const Icon(Icons.gavel, size: 22),
                 text: 'Aprovações Críticas (${ocorrenciasCriticasPendentes.length})',
               ),
               Tab(
-                icon: const Icon(Icons.local_shipping),
+                icon: const Icon(Icons.local_shipping, size: 22),
                 text: 'Suprir Materiais (${ocorrenciasAguardandoMaterial.length})',
               ),
             ],
