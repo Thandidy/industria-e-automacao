@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/snackbar_helper.dart';
 import 'solicitar_acesso_view.dart';
+import 'recuperar_senha_view.dart';
 
 /// Tela de login com autenticação no Firestore para usuários aprovados via WhatsApp.
 class LoginView extends StatefulWidget {
@@ -177,7 +178,30 @@ class _LoginViewState extends State<LoginView> {
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+
+                    // Link Esqueceu sua Senha centralizado em meio aos widgets
+                    Center(
+                      child: TextButton(
+                        onPressed: _isLoading
+                            ? null
+                            : () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => const RecuperarSenhaView(),
+                                  ),
+                                );
+                              },
+                        child: const Text(
+                          'Esqueceu sua Senha?',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
 
                     // Botão para solicitar cadastro / tentativa de login
                     TextButton.icon(

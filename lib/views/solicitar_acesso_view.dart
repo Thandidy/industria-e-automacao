@@ -220,7 +220,6 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
           DropdownButtonFormField<PerfilUsuario>(
             initialValue: _selectedPerfil,
             decoration: const InputDecoration(
-              labelText: 'Perfil de Acesso Desejado',
               prefixIcon: Icon(Icons.manage_accounts_outlined),
               border: OutlineInputBorder(),
             ),
