@@ -47,6 +47,16 @@ export async function buscarMaquina(db = dbPadrao, { id, tag } = {}) {
   return null;
 }
 
+// Helper para normalizar textos removendo acentos e convertendo para minúsculas
+export function normalizarTexto(txt) {
+  return (txt || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 /**
  * Busca usuários com perfis específicos que tenham telefone cadastrado
  * Ex: perfis = ['tecnico', 'supervisor'] ou ['gestor', 'supervisor']
@@ -56,11 +66,11 @@ export async function buscarUsuariosPorPerfis(db = dbPadrao, perfis = []) {
   try {
     const snap = await db.collection('usuarios').get();
     const resultados = [];
-    const perfisNorm = perfis.map((p) => p.toLowerCase().trim());
+    const perfisNorm = perfis.map(normalizarTexto);
 
     snap.forEach((doc) => {
       const data = doc.data();
-      const p = (data.perfil || '').toString().toLowerCase().trim();
+      const p = normalizarTexto(data.perfil);
       const tel = (data.telefone || '').toString().trim();
 
       if (tel && perfisNorm.some((perfil) => p.includes(perfil))) {
@@ -81,32 +91,69 @@ export async function buscarUsuariosPorPerfis(db = dbPadrao, perfis = []) {
 }
 
 /**
- * Busca um usuário por ID ou Nome na coleção 'usuarios'
+ * Busca um usuário por ID ou Nome na coleção 'usuarios' (com fallback para solicitacoes_login)
  */
 export async function buscarUsuarioPorIdOuNome(db = dbPadrao, { id, nome } = {}) {
   if (!db) return null;
   try {
+    let usuario = null;
+
     if (id) {
       const doc = await db.collection('usuarios').doc(id).get();
       if (doc.exists) {
-        return { id: doc.id, ...doc.data() };
+        usuario = { id: doc.id, ...doc.data() };
       }
     }
-    if (nome) {
+
+    if (!usuario && nome) {
       const snap = await db.collection('usuarios').where('nome', '==', nome).limit(1).get();
       if (!snap.empty) {
-        return { id: snap.docs[0].id, ...snap.docs[0].data() };
-      }
-      // Busca case-insensitive
-      const todos = await db.collection('usuarios').get();
-      const nomeLower = nome.trim().toLowerCase();
-      for (const d of todos.docs) {
-        const uNome = (d.data().nome || d.data().nomeFuncionario || '').trim().toLowerCase();
-        if (uNome === nomeLower) {
-          return { id: d.id, ...d.data() };
+        usuario = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      } else {
+        const todos = await db.collection('usuarios').get();
+        const nomeNorm = normalizarTexto(nome);
+        for (const d of todos.docs) {
+          const uNome = normalizarTexto(d.data().nome || d.data().nomeFuncionario);
+          if (uNome === nomeNorm || uNome.includes(nomeNorm) || nomeNorm.includes(uNome)) {
+            usuario = { id: d.id, ...d.data() };
+            break;
+          }
         }
       }
     }
+
+    // Se o usuário não tem telefone registrado em 'usuarios', busca em 'solicitacoes_login'
+    if ((!usuario || !usuario.telefone) && (id || nome)) {
+      if (id) {
+        const sDoc = await db.collection('solicitacoes_login').doc(id).get();
+        if (sDoc.exists) {
+          const sData = sDoc.data();
+          if (usuario) {
+            usuario.telefone = usuario.telefone || sData.telefone;
+          } else {
+            usuario = { id: sDoc.id, ...sData };
+          }
+        }
+      }
+      if ((!usuario || !usuario.telefone) && nome) {
+        const todosS = await db.collection('solicitacoes_login').get();
+        const nomeNorm = normalizarTexto(nome);
+        for (const d of todosS.docs) {
+          const sNome = normalizarTexto(d.data().nome || d.data().nomeFuncionario);
+          if (sNome === nomeNorm || sNome.includes(nomeNorm)) {
+            const sData = d.data();
+            if (usuario) {
+              usuario.telefone = usuario.telefone || sData.telefone;
+            } else {
+              usuario = { id: d.id, ...sData };
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    return usuario;
   } catch (err) {
     console.error('[mensagens.js] Erro ao buscar usuário:', err?.message || err);
   }
@@ -124,15 +171,21 @@ export async function enviarParaDestinatarios(enviarMensagem, telefones = [], me
   const enviados = new Set();
   for (const tel of telefones) {
     if (!tel) continue;
-    const sanitizado = tel.replace(/\D/g, '');
-    if (!sanitizado || enviados.has(sanitizado)) continue;
+    let sanitizado = tel.replace(/\D/g, '');
+    if (!sanitizado) continue;
+    if (sanitizado.length === 10 || sanitizado.length === 11) {
+      sanitizado = '55' + sanitizado;
+    }
+    if (enviados.has(sanitizado)) continue;
     enviados.add(sanitizado);
 
     try {
-      await enviarMensagem(tel, mensagem);
+      await enviarMensagem(sanitizado, mensagem);
     } catch (e) {
-      console.error(`[mensagens.js] Falha ao enviar WhatsApp para ${tel}:`, e?.message || e);
+      console.error(`[mensagens.js] Falha ao enviar WhatsApp para ${sanitizado}:`, e?.message || e);
     }
+  }
+}
   }
 }
 

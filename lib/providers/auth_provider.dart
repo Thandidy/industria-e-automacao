@@ -263,7 +263,37 @@ class AuthProvider extends ChangeNotifier {
         } else if (status == 'rejeitado') {
           throw Exception('Sua solicitação de acesso foi REJEITADA pelo gestor.');
         } else if (status == 'aprovado') {
-          throw Exception('Seu cadastro já foi aprovado. Tente novamente em instantes.');
+          // Validação de senha
+          final senhaArmazenada = (solData['senha'] ?? '').toString();
+          if (senhaArmazenada.isNotEmpty && senhaArmazenada != password) {
+            throw Exception('Senha incorreta. Verifique os dados digitados.');
+          }
+
+          // Auto-cura: Sincroniza e cria o documento definitivo na coleção 'usuarios'
+          final novoUsuario = {
+            'nome': solData['nome'] ?? solData['nomeFuncionario'] ?? 'Usuário',
+            'email': solData['email'] ?? termo,
+            'telefone': solData['telefone'] ?? '',
+            'perfil': solData['perfil'] ?? 'operador',
+            'senha': solData['senha'] ?? password,
+            'status': 'aprovado',
+            'criadoEm': solData['criadoEm'] ?? FieldValue.serverTimestamp(),
+            'ultimoLogin': FieldValue.serverTimestamp(),
+          };
+
+          try {
+            await firestore.collection('usuarios').doc(solDoc.id).set(novoUsuario, SetOptions(merge: true));
+          } catch (_) {}
+
+          _userId = solDoc.id;
+          _nome = novoUsuario['nome'].toString();
+          _email = novoUsuario['email'].toString();
+          _perfil = _converterPerfil(novoUsuario['perfil']);
+          _telefone = novoUsuario['telefone'].toString();
+          _autenticado = true;
+
+          notifyListeners();
+          return;
         }
       }
 

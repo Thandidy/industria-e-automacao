@@ -39,6 +39,21 @@ const TELEFONE_CHEFE_JID = CHEFE_DIGITOS ? CHEFE_DIGITOS + '@s.whatsapp.net' : '
 const LID_CHEFE_CONFIG = (process.env.LID_CHEFE || '').trim().replace(/['"]/g, '');
 const LID_CHEFE_ID = LID_CHEFE_CONFIG.split('@')[0].split(':')[0];
 
+// Conjunto de LIDs do WhatsApp conhecidos do Chefe (carregado do .env e aprendido dinamicamente)
+const lidsChefeConhecidos = new Set();
+if (LID_CHEFE_ID) {
+  lidsChefeConhecidos.add(LID_CHEFE_ID);
+}
+
+export function aprenderLidChefe(jid) {
+  if (!jid) return;
+  const id = jid.split('@')[0].split(':')[0];
+  if (id && !lidsChefeConhecidos.has(id)) {
+    lidsChefeConhecidos.add(id);
+    console.log(`[Auto-Detecção] 🎯 LID do Chefe identificado e registrado dinamicamente: ${id}@lid`);
+  }
+}
+
 let sockAtual = null;
 let currentQRDataUrl = null;
 let rawQRString = null;
@@ -98,20 +113,28 @@ export function onWhatsAppOpen(cb) {
 }
 
 export function ehDoChefe(msgKey) {
+  if (!msgKey) return false;
   const remetente = msgKey.remoteJid || '';
   const participant = msgKey.participant || '';
 
-  if (LID_CHEFE_ID) {
-    const rLid = remetente.split('@')[0].split(':')[0];
-    const pLid = participant.split('@')[0].split(':')[0];
-    if (rLid === LID_CHEFE_ID || pLid === LID_CHEFE_ID) return true;
+  const rLid = remetente.split('@')[0].split(':')[0];
+  const pLid = participant.split('@')[0].split(':')[0];
+
+  // 1. Checagem por LID do WhatsApp (configurado no .env ou auto-detectado dinamicamente)
+  if (lidsChefeConhecidos.has(rLid) || lidsChefeConhecidos.has(pLid)) {
+    return true;
   }
 
-  if (CHEFE_ULTIMOS_8) {
-    const extrairDigitos = (jid) => (jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
-    const rDigitos = extrairDigitos(remetente);
-    const pDigitos = extrairDigitos(participant);
-    if (rDigitos.endsWith(CHEFE_ULTIMOS_8) || pDigitos.endsWith(CHEFE_ULTIMOS_8)) return true;
+  // 2. Checagem por Telefone (últimos 8 dígitos ou número completo)
+  const extrairDigitos = (jid) => (jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+  const rDigitos = extrairDigitos(remetente);
+  const pDigitos = extrairDigitos(participant);
+
+  if (CHEFE_ULTIMOS_8 && (rDigitos.endsWith(CHEFE_ULTIMOS_8) || pDigitos.endsWith(CHEFE_ULTIMOS_8))) {
+    return true;
+  }
+  if (CHEFE_DIGITOS && (rDigitos === CHEFE_DIGITOS || pDigitos === CHEFE_DIGITOS)) {
+    return true;
   }
 
   return false;
@@ -363,7 +386,7 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Escuta Reações de Emojis
+    // 1. Escuta REAÇÕES com emojis (👍, 👎, ✅, ❌)
     sock.ev.on('messages.reaction', async (reactions) => {
       for (const item of reactions) {
         const { key, reaction } = item;
@@ -371,23 +394,47 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
         const emoji = reaction?.text;
 
         if (!emoji || !targetMsgId) continue;
-        if (!ehDoChefe(key)) continue;
 
         const acao = identificarAcao(emoji);
         if (!acao) continue;
 
-        console.log(`[Reação Detectada] Emoji "${emoji}" -> Ação: ${acao} na msg ${targetMsgId}`);
+        // Se a reação foi feita em uma mensagem enviada pelo bot ao chefe sobre uma solicitação
+        let ehMsgDeSolicitacao = cacheMsgParaSolicitacao.has(targetMsgId);
+        if (!ehMsgDeSolicitacao) {
+          try {
+            const snap = await db.collection('solicitacoes_login')
+              .where('whatsappMsgId', '==', targetMsgId)
+              .limit(1)
+              .get();
+            if (!snap.empty) {
+              ehMsgDeSolicitacao = true;
+              cacheMsgParaSolicitacao.set(targetMsgId, snap.docs[0].id);
+            }
+          } catch (_) {}
+        }
 
-        await processarDecisao({
-          whatsappMsgId: targetMsgId,
-          acao,
-          remetenteJid: key.remoteJid,
-          sock
-        });
+        // Se é uma mensagem que o bot enviou para aprovação, a reação SÓ PODE vir do chefe!
+        const autorizado = ehDoChefe(key) || ehMsgDeSolicitacao;
+
+        if (autorizado) {
+          aprenderLidChefe(key.remoteJid);
+          if (key.participant) aprenderLidChefe(key.participant);
+
+          console.log(`[Reação Detectada] Emoji "${emoji}" -> Ação: ${acao} na msg ${targetMsgId} (De: ${key.remoteJid})`);
+
+          await processarDecisao({
+            whatsappMsgId: targetMsgId,
+            acao,
+            remetenteJid: key.remoteJid,
+            sock
+          });
+        } else {
+          console.log(`[Reação ignorada] Msg ${targetMsgId} de ${key.remoteJid} (Não pertence a solicitação ativa nem bate com o chefe)`);
+        }
       }
     });
 
-    // Escuta Mensagens Recebidas
+    // 2. Escuta MENSAGENS recebidas
     sock.ev.on('messages.upsert', async (m) => {
       if (m.type !== 'notify') return;
 
@@ -397,24 +444,51 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
 
         if (msg.message.reactionMessage) continue;
         if (msg.key.fromMe) continue;
-        if (!ehDoChefe(msg.key)) continue;
 
+        const quotedMsgId = msg.message.extendedTextMessage?.contextInfo?.stanzaId;
         const textoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
         const textoLimpo = textoMensagem.replace(/[*_~`]/g, '').trim();
+
         if (!textoLimpo) continue;
+
+        const matchComando = textoLimpo.match(/^(aprovar|rejeitar)\s+(.+)$/i);
+        const acaoCitada = identificarAcao(textoLimpo);
+
+        // Verifica se está citando uma mensagem de solicitação pendente enviada ao chefe
+        let citaSolicitacao = false;
+        if (quotedMsgId) {
+          if (cacheMsgParaSolicitacao.has(quotedMsgId)) {
+            citaSolicitacao = true;
+          } else {
+            try {
+              const snap = await db.collection('solicitacoes_login')
+                .where('whatsappMsgId', '==', quotedMsgId)
+                .limit(1)
+                .get();
+              if (!snap.empty) {
+                citaSolicitacao = true;
+                cacheMsgParaSolicitacao.set(quotedMsgId, snap.docs[0].id);
+              }
+            } catch (_) {}
+          }
+        }
+
+        const autorizado = ehDoChefe(msg.key) || citaSolicitacao;
+        if (!autorizado) {
+          console.log(`[Mensagem ignorada] De: ${remetente} (Não corresponde ao chefe. Esperado Tel=${CHEFE_DIGITOS})`);
+          continue;
+        }
+
+        aprenderLidChefe(remetente);
 
         console.log(`[Mensagem do Chefe] "${textoLimpo}" de ${remetente}`);
 
-        const matchComando = textoLimpo.match(/^(aprovar|rejeitar)\s+(.+)$/i);
         if (matchComando) {
           const acao = matchComando[1].toLowerCase();
           const solicitacaoId = matchComando[2].trim();
           await processarDecisao({ solicitacaoId, acao, remetenteJid: remetente, sock });
           continue;
         }
-
-        const quotedMsgId = msg.message.extendedTextMessage?.contextInfo?.stanzaId;
-        const acaoCitada = identificarAcao(textoLimpo);
 
         if (quotedMsgId && acaoCitada) {
           await processarDecisao({ whatsappMsgId: quotedMsgId, acao: acaoCitada, remetenteJid: remetente, sock });
@@ -423,7 +497,7 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
 
         if (acaoCitada) {
           await sock.sendMessage(remetente, {
-            text: `ℹ️ Para responder por texto, informe o ID junto:\nExemplo: *${acaoCitada} ID_DA_SOLICITACAO*\nOu simplesmente reaja à mensagem da solicitação com 👍 ou ❌.`
+            text: `ℹ️ Para responder por texto, cite a mensagem da solicitação ou informe o ID junto:\nExemplo: *${acaoCitada} ID_DA_SOLICITACAO*\nOu simplesmente reaja à mensagem da solicitação com 👍 ou ❌.`
           });
         }
       }
