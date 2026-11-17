@@ -5,6 +5,7 @@ import qrcode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { db, FieldValue } from './firebase.js';
@@ -14,7 +15,22 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuração flexível do telefone e LID do Chefe
+// Diretório de autenticação seguro: no Vercel (onde /var/task é Read-Only), usa /tmp
+export function obterDiretorioAuth() {
+  if (process.env.VERCEL || process.platform === 'linux') {
+    const dir = path.join(os.tmpdir(), 'sige_auth_info');
+    if (!fs.existsSync(dir)) {
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+    }
+    return dir;
+  }
+  const dir = path.resolve(process.cwd(), 'auth_info');
+  if (!fs.existsSync(dir)) {
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  }
+  return dir;
+}
+
 const TELEFONE_CHEFE_CONFIG = (process.env.TELEFONE_CHEFE || '').trim().replace(/['"]/g, '');
 const CHEFE_DIGITOS = TELEFONE_CHEFE_CONFIG.replace(/\D/g, '');
 const CHEFE_ULTIMOS_8 = CHEFE_DIGITOS.slice(-8);
@@ -29,9 +45,49 @@ let rawQRString = null;
 let connectionStatus = 'disconnected'; // 'disconnected' | 'connecting' | 'waiting_qr' | 'connected'
 let lastDisconnectReason = null;
 let callbacksOnOpen = [];
+let qrWaiters = [];
 
 const cacheMsgParaSolicitacao = new Map();
 const decisoesEmProcessamento = new Set();
+
+function notificarWaiters() {
+  const estado = getWhatsAppState();
+  const waiters = [...qrWaiters];
+  qrWaiters = [];
+  waiters.forEach((resolve) => {
+    try { resolve(estado); } catch (_) {}
+  });
+}
+
+/**
+ * Aguarda de forma assíncrona até que o QR Code seja gerado ou o socket conecte
+ */
+export function aguardarQRouConexao(timeoutMs = 9000) {
+  if (currentQRDataUrl || connectionStatus === 'connected') {
+    return Promise.resolve(getWhatsAppState());
+  }
+
+  return new Promise((resolve) => {
+    let concluido = false;
+
+    const wrappedResolve = (estado) => {
+      if (!concluido) {
+        concluido = true;
+        resolve(estado);
+      }
+    };
+
+    qrWaiters.push(wrappedResolve);
+
+    setTimeout(() => {
+      if (!concluido) {
+        concluido = true;
+        qrWaiters = qrWaiters.filter((w) => w !== wrappedResolve);
+        resolve(getWhatsAppState());
+      }
+    }, timeoutMs);
+  });
+}
 
 export function onWhatsAppOpen(cb) {
   if (connectionStatus === 'connected' && sockAtual) {
@@ -203,7 +259,7 @@ export async function enviarMensagemWhatsApp(destinatario, mensagem) {
   if (!jid) {
     jid = TELEFONE_CHEFE_JID;
   } else if (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid')) {
-    // formato já ok
+    // formato ok
   } else {
     let digitos = jid.replace(/\D/g, '');
     if (digitos.length === 10 || digitos.length === 11) {
@@ -222,148 +278,164 @@ export async function enviarMensagemWhatsApp(destinatario, mensagem) {
   }
 }
 
-export async function connectToWhatsApp({ printTerminal = false, authFolder = 'auth_info' } = {}) {
+export async function connectToWhatsApp({ printTerminal = false, authFolder = null } = {}) {
   if (sockAtual && connectionStatus === 'connected') {
     return sockAtual;
   }
 
+  const pastaFinalAuth = authFolder || obterDiretorioAuth();
   connectionStatus = 'connecting';
-  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
-  const sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: false,
-    logger: pino({ level: 'error' }),
-    browser: Browsers.windows('Desktop'),
-    syncFullHistory: false,
-    defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 30000
-  });
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState(pastaFinalAuth);
 
-  sockAtual = sock;
+    const sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false,
+      logger: pino({ level: 'silent' }),
+      browser: Browsers.windows('Desktop'),
+      syncFullHistory: false,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
+      connectTimeoutMs: 45000
+    });
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+    sockAtual = sock;
 
-    if (qr) {
-      rawQRString = qr;
-      connectionStatus = 'waiting_qr';
-      try {
-        currentQRDataUrl = await qrcode.toDataURL(qr, { margin: 2, scale: 8 });
-      } catch (_) {}
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
 
-      if (printTerminal) {
-        console.log('📷 Escaneie o QR Code abaixo com o seu WhatsApp:');
-        qrcodeTerminal.generate(qr, { small: true });
-      }
-    }
+      if (qr) {
+        rawQRString = qr;
+        connectionStatus = 'waiting_qr';
+        try {
+          currentQRDataUrl = await qrcode.toDataURL(qr, { margin: 2, scale: 8 });
+        } catch (_) {}
 
-    if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.code;
-      lastDisconnectReason = statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-
-      connectionStatus = 'disconnected';
-      currentQRDataUrl = null;
-      rawQRString = null;
-
-      try {
-        sock.ev.removeAllListeners();
-        sock.end?.();
-      } catch (_) {}
-
-      if (shouldReconnect) {
-        console.log(`[WhatsApp] Reconectando em 3s... (código: ${statusCode})`);
-        setTimeout(() => connectToWhatsApp({ printTerminal, authFolder }), 3000);
-      } else {
-        console.log('❌ Sessão desconectada ou credenciais revogadas pelo WhatsApp.');
-        if (fs.existsSync(authFolder)) {
-          try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch (_) {}
+        if (printTerminal) {
+          console.log('\n📷 Escaneie o QR Code abaixo com o seu WhatsApp:');
+          qrcodeTerminal.generate(qr, { small: true });
         }
-      }
-    } else if (connection === 'open') {
-      console.log('✅ WhatsApp conectado com sucesso e pronto!');
-      connectionStatus = 'connected';
-      currentQRDataUrl = null;
-      rawQRString = null;
 
-      const callbacks = [...callbacksOnOpen];
-      callbacksOnOpen = [];
-      callbacks.forEach((cb) => {
-        try { cb(sock); } catch (e) { console.error(e); }
-      });
-    }
-  });
-
-  sock.ev.on('creds.update', saveCreds);
-
-  // Escuta Reações de Emojis
-  sock.ev.on('messages.reaction', async (reactions) => {
-    for (const item of reactions) {
-      const { key, reaction } = item;
-      const targetMsgId = key?.id;
-      const emoji = reaction?.text;
-
-      if (!emoji || !targetMsgId) continue;
-      if (!ehDoChefe(key)) continue;
-
-      const acao = identificarAcao(emoji);
-      if (!acao) continue;
-
-      console.log(`[Reação Detectada] Emoji "${emoji}" -> Ação: ${acao} na msg ${targetMsgId}`);
-
-      await processarDecisao({
-        whatsappMsgId: targetMsgId,
-        acao,
-        remetenteJid: key.remoteJid,
-        sock
-      });
-    }
-  });
-
-  // Escuta Mensagens Recebidas
-  sock.ev.on('messages.upsert', async (m) => {
-    if (m.type !== 'notify') return;
-
-    for (const msg of m.messages) {
-      if (!msg.message) continue;
-      const remetente = msg.key.remoteJid;
-
-      if (msg.message.reactionMessage) continue;
-      if (msg.key.fromMe) continue;
-      if (!ehDoChefe(msg.key)) continue;
-
-      const textoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-      const textoLimpo = textoMensagem.replace(/[*_~`]/g, '').trim();
-      if (!textoLimpo) continue;
-
-      console.log(`[Mensagem do Chefe] "${textoLimpo}" de ${remetente}`);
-
-      const matchComando = textoLimpo.match(/^(aprovar|rejeitar)\s+(.+)$/i);
-      if (matchComando) {
-        const acao = matchComando[1].toLowerCase();
-        const solicitacaoId = matchComando[2].trim();
-        await processarDecisao({ solicitacaoId, acao, remetenteJid: remetente, sock });
-        continue;
+        notificarWaiters();
       }
 
-      const quotedMsgId = msg.message.extendedTextMessage?.contextInfo?.stanzaId;
-      const acaoCitada = identificarAcao(textoLimpo);
+      if (connection === 'close') {
+        const statusCode = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.code;
+        lastDisconnectReason = statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-      if (quotedMsgId && acaoCitada) {
-        await processarDecisao({ whatsappMsgId: quotedMsgId, acao: acaoCitada, remetenteJid: remetente, sock });
-        continue;
+        connectionStatus = 'disconnected';
+        currentQRDataUrl = null;
+        rawQRString = null;
+
+        try {
+          sock.ev.removeAllListeners();
+          sock.end?.();
+        } catch (_) {}
+
+        if (shouldReconnect) {
+          console.log(`[WhatsApp] Reconectando em 2s... (código: ${statusCode})`);
+          setTimeout(() => connectToWhatsApp({ printTerminal, authFolder: pastaFinalAuth }), 2000);
+        } else {
+          console.log('❌ Sessão desconectada ou credenciais revogadas pelo WhatsApp.');
+          if (fs.existsSync(pastaFinalAuth)) {
+            try { fs.rmSync(pastaFinalAuth, { recursive: true, force: true }); } catch (_) {}
+          }
+        }
+
+        notificarWaiters();
+      } else if (connection === 'open') {
+        console.log('✅ WhatsApp conectado com sucesso e pronto!');
+        connectionStatus = 'connected';
+        currentQRDataUrl = null;
+        rawQRString = null;
+
+        const callbacks = [...callbacksOnOpen];
+        callbacksOnOpen = [];
+        callbacks.forEach((cb) => {
+          try { cb(sock); } catch (e) { console.error(e); }
+        });
+
+        notificarWaiters();
       }
+    });
 
-      if (acaoCitada) {
-        await sock.sendMessage(remetente, {
-          text: `ℹ️ Para responder por texto, informe o ID junto:\nExemplo: *${acaoCitada} ID_DA_SOLICITACAO*\nOu simplesmente reaja à mensagem da solicitação com 👍 ou ❌.`
+    sock.ev.on('creds.update', saveCreds);
+
+    // Escuta Reações de Emojis
+    sock.ev.on('messages.reaction', async (reactions) => {
+      for (const item of reactions) {
+        const { key, reaction } = item;
+        const targetMsgId = key?.id;
+        const emoji = reaction?.text;
+
+        if (!emoji || !targetMsgId) continue;
+        if (!ehDoChefe(key)) continue;
+
+        const acao = identificarAcao(emoji);
+        if (!acao) continue;
+
+        console.log(`[Reação Detectada] Emoji "${emoji}" -> Ação: ${acao} na msg ${targetMsgId}`);
+
+        await processarDecisao({
+          whatsappMsgId: targetMsgId,
+          acao,
+          remetenteJid: key.remoteJid,
+          sock
         });
       }
-    }
-  });
+    });
 
-  return sock;
+    // Escuta Mensagens Recebidas
+    sock.ev.on('messages.upsert', async (m) => {
+      if (m.type !== 'notify') return;
+
+      for (const msg of m.messages) {
+        if (!msg.message) continue;
+        const remetente = msg.key.remoteJid;
+
+        if (msg.message.reactionMessage) continue;
+        if (msg.key.fromMe) continue;
+        if (!ehDoChefe(msg.key)) continue;
+
+        const textoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+        const textoLimpo = textoMensagem.replace(/[*_~`]/g, '').trim();
+        if (!textoLimpo) continue;
+
+        console.log(`[Mensagem do Chefe] "${textoLimpo}" de ${remetente}`);
+
+        const matchComando = textoLimpo.match(/^(aprovar|rejeitar)\s+(.+)$/i);
+        if (matchComando) {
+          const acao = matchComando[1].toLowerCase();
+          const solicitacaoId = matchComando[2].trim();
+          await processarDecisao({ solicitacaoId, acao, remetenteJid: remetente, sock });
+          continue;
+        }
+
+        const quotedMsgId = msg.message.extendedTextMessage?.contextInfo?.stanzaId;
+        const acaoCitada = identificarAcao(textoLimpo);
+
+        if (quotedMsgId && acaoCitada) {
+          await processarDecisao({ whatsappMsgId: quotedMsgId, acao: acaoCitada, remetenteJid: remetente, sock });
+          continue;
+        }
+
+        if (acaoCitada) {
+          await sock.sendMessage(remetente, {
+            text: `ℹ️ Para responder por texto, informe o ID junto:\nExemplo: *${acaoCitada} ID_DA_SOLICITACAO*\nOu simplesmente reaja à mensagem da solicitação com 👍 ou ❌.`
+          });
+        }
+      }
+    });
+
+    return sock;
+  } catch (err) {
+    console.error('[WhatsApp] Erro ao inicializar socket Baileys:', err);
+    connectionStatus = 'disconnected';
+    notificarWaiters();
+    return null;
+  }
 }
 
 export function getWhatsAppState() {
@@ -387,5 +459,7 @@ export default {
   onWhatsAppOpen,
   processarDecisao,
   ehDoChefe,
-  identificarAcao
+  identificarAcao,
+  aguardarQRouConexao,
+  obterDiretorioAuth
 };
