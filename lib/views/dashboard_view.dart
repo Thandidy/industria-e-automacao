@@ -12,6 +12,7 @@ import '../widgets/equipamento_card.dart';
 import '../widgets/permission_guard.dart';
 import '../widgets/search_filter_bar.dart';
 import 'equipamento_detalhe_view.dart';
+import 'whatsapp_status_view.dart';
 
 /// Tela principal do aplicativo - Dashboard com listagem e status de equipamentos
 /// totalmente protegida com RBAC (Role-Based Access Control).
@@ -131,6 +132,19 @@ class _DashboardViewState extends State<DashboardView> {
               icon: const Icon(Icons.settings_suggest),
               tooltip: 'Gerenciamento de Máquinas',
               onPressed: () => Navigator.of(context).pushNamed('/gerenciamento-maquinas'),
+            ),
+          ),
+
+          // 4. Status do WhatsApp & Notificações (Supervisor e Gestor)
+          PermissionGuard(
+            permission: AppPermission.visualizarDashboardKpi,
+            child: IconButton(
+              icon: const Icon(Icons.qr_code_2),
+              tooltip: 'Status WhatsApp & Notificações',
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => const WhatsAppStatusView(),
+              ),
             ),
           ),
         ],

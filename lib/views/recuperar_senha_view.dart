@@ -328,7 +328,7 @@ class _RecuperarSenhaViewState extends State<RecuperarSenhaView> {
         return;
       }
 
-      final data = (docSnap.data() as Map<String, dynamic>?) ?? {};
+      final data = docSnap.data() ?? {};
       final codigoCorreto = data['codigo']?.toString() ?? '';
       final usado = data['usado'] == true;
       final tentativas = (data['tentativas'] as num?)?.toInt() ?? 0;

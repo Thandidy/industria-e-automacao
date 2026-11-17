@@ -9,7 +9,6 @@ import '../utils/helpers.dart';
 import '../providers/auth_provider.dart';
 import '../providers/ocorrencia_provider.dart';
 import '../widgets/custom_app_bar.dart';
-import '../widgets/permission_guard.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/snackbar_helper.dart';
 
