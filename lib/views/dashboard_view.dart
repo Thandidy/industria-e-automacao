@@ -149,92 +149,108 @@ class _DashboardViewState extends State<DashboardView> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Banner de Destaque Visual por Cargo com Acesso Rápido às Abas Exclusivas
-          _RoleHeaderBanner(usuario: usuario),
-
-          SearchFilterBar(
-            searchController: _searchController,
-            onSearchChanged: (query) {
-              setState(() {
-                _searchQuery = query;
-              });
-            },
-            statusFilters: _selectedStatuses,
-            onStatusFiltersChanged: (statuses) {
-              setState(() {
-                _selectedStatuses = statuses;
-              });
-            },
-          ),
-
-          // Barra de Filtro Avançado exclusiva do Supervisor / Gestor
-          PermissionGuard(
-            permission: AppPermission.filtrosAvancadosIndisponibilidade,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Row(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await equipamentoProvider.carregarEquipamentos();
+        },
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.filter_list, size: 18, color: Colors.orange),
-                  const SizedBox(width: 8),
-                  const Text('Filtro de Gestão: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  FilterChip(
-                    label: const Text('Indisponíveis há mais tempo'),
-                    selected: _ordenarPorMaisTempoParado,
-                    onSelected: (val) {
-                      setState(() => _ordenarPorMaisTempoParado = val);
+                  // Banner de Destaque Visual por Cargo com Acesso Rápido às Abas Exclusivas
+                  _RoleHeaderBanner(usuario: usuario),
+
+                  SearchFilterBar(
+                    searchController: _searchController,
+                    onSearchChanged: (query) {
+                      setState(() {
+                        _searchQuery = query;
+                      });
+                    },
+                    statusFilters: _selectedStatuses,
+                    onStatusFiltersChanged: (statuses) {
+                      setState(() {
+                        _selectedStatuses = statuses;
+                      });
                     },
                   ),
+
+                  // Barra de Filtro Avançado exclusiva do Supervisor / Gestor
+                  PermissionGuard(
+                    permission: AppPermission.filtrosAvancadosIndisponibilidade,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.filter_list, size: 18, color: Colors.orange),
+                          const SizedBox(width: 8),
+                          const Text('Filtro de Gestão: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          FilterChip(
+                            label: const Text('Indisponíveis há mais tempo'),
+                            selected: _ordenarPorMaisTempoParado,
+                            onSelected: (val) {
+                              setState(() => _ordenarPorMaisTempoParado = val);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Resumo executivo de métricas rápidas
+                  if (equipamentoProvider.equipamentos.isNotEmpty)
+                    _ResumoExecutive(
+                      equipamentos: equipamentoProvider.equipamentos,
+                      statusCounts: equipamentoProvider.statusCounts,
+                    ),
                 ],
               ),
             ),
-          ),
 
-          // Resumo executivo de métricas rápidas
-          if (equipamentoProvider.equipamentos.isNotEmpty) ...[
-            _ResumoExecutive(
-              equipamentos: equipamentoProvider.equipamentos,
-              statusCounts: equipamentoProvider.statusCounts,
-            ),
-          ],
-
-          // Lista de equipamentos
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: () async {
-                await equipamentoProvider.carregarEquipamentos();
-              },
-              child: equipamentoProvider.isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : equipamentosFiltrados.isEmpty
-                      ? const _EmptyState()
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: equipamentosFiltrados.length,
-                          itemBuilder: (context, index) {
-                            final equipamento = equipamentosFiltrados[index];
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => EquipamentoDetalheView(
-                                      equipamentoId: equipamento.id,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: EquipamentoCard(
-                                equipamento: equipamento,
-                                showActions: true,
+            // Lista de equipamentos ou estados vazios/carregando
+            if (equipamentoProvider.isLoading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (equipamentosFiltrados.isEmpty)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: _EmptyState(),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.only(top: 8, bottom: 32),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final equipamento = equipamentosFiltrados[index];
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => EquipamentoDetalheView(
+                                equipamentoId: equipamento.id,
                               ),
-                            );
-                          },
+                            ),
+                          );
+                        },
+                        child: EquipamentoCard(
+                          equipamento: equipamento,
+                          showActions: true,
                         ),
-            ),
-          ),
-        ],
+                      );
+                    },
+                    childCount: equipamentosFiltrados.length,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

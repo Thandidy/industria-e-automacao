@@ -333,102 +333,115 @@ class _GerenciamentoMaquinasViewState extends State<GerenciamentoMaquinasView> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Filtrar por TAG, nome ou setor...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                    : null,
-              ),
-              onChanged: (v) => setState(() => _searchQuery = v.trim()),
+      body: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Filtrar por TAG, nome ou setor...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
+                    ),
+                    onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Todos'),
+                          selected: _selectedStatusFilter == null,
+                          onSelected: (selected) {
+                            if (selected) setState(() => _selectedStatusFilter = null);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          avatar: const Icon(Icons.pending_actions, size: 16, color: Colors.orangeAccent),
+                          label: const Text('Aguardando Aprovação'),
+                          selected: _selectedStatusFilter == StatusEquipamento.aguardandoAprovacao,
+                          onSelected: (selected) {
+                            setState(() => _selectedStatusFilter = selected ? StatusEquipamento.aguardandoAprovacao : null);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          avatar: const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                          label: const Text('Operando'),
+                          selected: _selectedStatusFilter == StatusEquipamento.operando,
+                          onSelected: (selected) {
+                            setState(() => _selectedStatusFilter = selected ? StatusEquipamento.operando : null);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          avatar: const Icon(Icons.stop_circle, size: 16, color: Colors.red),
+                          label: const Text('Parada'),
+                          selected: _selectedStatusFilter == StatusEquipamento.parada,
+                          onSelected: (selected) {
+                            setState(() => _selectedStatusFilter = selected ? StatusEquipamento.parada : null);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          avatar: const Icon(Icons.build, size: 16, color: Colors.blue),
+                          label: const Text('Manutenção'),
+                          selected: _selectedStatusFilter == StatusEquipamento.manutencao,
+                          onSelected: (selected) {
+                            setState(() => _selectedStatusFilter = selected ? StatusEquipamento.manutencao : null);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          avatar: const Icon(Icons.inventory_2, size: 16, color: Colors.amber),
+                          label: const Text('Aguardando Material'),
+                          selected: _selectedStatusFilter == StatusEquipamento.aguardandoMaterial,
+                          onSelected: (selected) {
+                            setState(() => _selectedStatusFilter = selected ? StatusEquipamento.aguardandoMaterial : null);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ChoiceChip(
-                    label: const Text('Todos'),
-                    selected: _selectedStatusFilter == null,
-                    onSelected: (selected) {
-                      if (selected) setState(() => _selectedStatusFilter = null);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    avatar: const Icon(Icons.pending_actions, size: 16, color: Colors.orangeAccent),
-                    label: const Text('Aguardando Aprovação'),
-                    selected: _selectedStatusFilter == StatusEquipamento.aguardandoAprovacao,
-                    onSelected: (selected) {
-                      setState(() => _selectedStatusFilter = selected ? StatusEquipamento.aguardandoAprovacao : null);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    avatar: const Icon(Icons.check_circle, size: 16, color: Colors.green),
-                    label: const Text('Operando'),
-                    selected: _selectedStatusFilter == StatusEquipamento.operando,
-                    onSelected: (selected) {
-                      setState(() => _selectedStatusFilter = selected ? StatusEquipamento.operando : null);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    avatar: const Icon(Icons.stop_circle, size: 16, color: Colors.red),
-                    label: const Text('Parada'),
-                    selected: _selectedStatusFilter == StatusEquipamento.parada,
-                    onSelected: (selected) {
-                      setState(() => _selectedStatusFilter = selected ? StatusEquipamento.parada : null);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    avatar: const Icon(Icons.build, size: 16, color: Colors.blue),
-                    label: const Text('Manutenção'),
-                    selected: _selectedStatusFilter == StatusEquipamento.manutencao,
-                    onSelected: (selected) {
-                      setState(() => _selectedStatusFilter = selected ? StatusEquipamento.manutencao : null);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    avatar: const Icon(Icons.inventory_2, size: 16, color: Colors.amber),
-                    label: const Text('Aguardando Material'),
-                    selected: _selectedStatusFilter == StatusEquipamento.aguardandoMaterial,
-                    onSelected: (selected) {
-                      setState(() => _selectedStatusFilter = selected ? StatusEquipamento.aguardandoMaterial : null);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: maquinas.isEmpty
-                ? const Center(child: Text('Nenhum equipamento cadastrado.'))
-                : ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: maquinas.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final eq = maquinas[index];
-                      return Card(
+          if (maquinas.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Text('Nenhum equipamento cadastrado.')),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final eq = maquinas[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Card(
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -460,10 +473,13 @@ class _GerenciamentoMaquinasViewState extends State<GerenciamentoMaquinasView> {
                             ],
                           ),
                         ),
-                      );
-                    },
-                  ),
-          ),
+                      ),
+                    );
+                  },
+                  childCount: maquinas.length,
+                ),
+              ),
+            ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
