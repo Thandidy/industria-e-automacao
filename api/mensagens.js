@@ -186,8 +186,6 @@ export async function enviarParaDestinatarios(enviarMensagem, telefones = [], me
     }
   }
 }
-  }
-}
 
 /**
  * 1. Notifica sempre que uma máquina parar:

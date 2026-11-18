@@ -50,7 +50,11 @@ export function aprenderLidChefe(jid) {
   const id = jid.split('@')[0].split(':')[0];
   if (id && !lidsChefeConhecidos.has(id)) {
     lidsChefeConhecidos.add(id);
-    console.log(`[Auto-Detecção] 🎯 LID do Chefe identificado e registrado dinamicamente: ${id}@lid`);
+    console.log(`\n============================================================`);
+    console.log(`🎯 [LID DO CHEFE IDENTIFICADO]: ${id}@lid`);
+    console.log(`👉 Para fixar no Vercel ou .env, adicione:`);
+    console.log(`LID_CHEFE=${id}@lid`);
+    console.log(`============================================================\n`);
   }
 }
 
@@ -429,7 +433,7 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
             sock
           });
         } else {
-          console.log(`[Reação ignorada] Msg ${targetMsgId} de ${key.remoteJid} (Não pertence a solicitação ativa nem bate com o chefe)`);
+          console.log(`[Reação ignorada] Emoji "${emoji}" na msg ${targetMsgId} de ${key.remoteJid}${key.participant ? ' (Part: ' + key.participant + ')' : ''} (Não pertence a solicitação ativa nem bate com o chefe)`);
         }
       }
     });
@@ -475,11 +479,12 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
 
         const autorizado = ehDoChefe(msg.key) || citaSolicitacao;
         if (!autorizado) {
-          console.log(`[Mensagem ignorada] De: ${remetente} (Não corresponde ao chefe. Esperado Tel=${CHEFE_DIGITOS})`);
+          console.log(`[Mensagem Recebida] De: ${remetente}${msg.key.participant ? ' (Participante: ' + msg.key.participant + ')' : ''} | Texto: "${textoLimpo}" | Ignorada pois não corresponde ao chefe (Esperado Tel=${CHEFE_DIGITOS})`);
           continue;
         }
 
         aprenderLidChefe(remetente);
+        if (msg.key.participant) aprenderLidChefe(msg.key.participant);
 
         console.log(`[Mensagem do Chefe] "${textoLimpo}" de ${remetente}`);
 
