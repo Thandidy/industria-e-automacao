@@ -1,626 +1,426 @@
 // api/whatsapp.js
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } from '@whiskeysockets/baileys';
+// Comunicação via Firestore como ponte em tempo real.
+// QR Code exibido APENAS no terminal; Flutter mostra só o status.
+
+import {
+  makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  Browsers,
+} from '@whiskeysockets/baileys';
 import pino from 'pino';
-import qrcode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
+import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
 import { db, FieldValue } from './firebase.js';
 import { enviarEmail, gerarTemplateNotificacao } from './email.js';
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// ---------------------------------------------------------------------------
+// Firestore – referências
+// ---------------------------------------------------------------------------
+const CONFIG_REF = db.collection('config').doc('whatsapp');
 
-// Diretório de autenticação seguro: no Vercel (onde /var/task é Read-Only), usa /tmp
-export function obterDiretorioAuth() {
-  if (process.env.VERCEL || process.platform === 'linux') {
-    const dir = path.join(os.tmpdir(), 'sige_auth_info');
-    if (!fs.existsSync(dir)) {
-      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
-    }
-    return dir;
+/** Verifica rapidamente se o Firestore está acessível antes de criar watchers */
+async function validarConexaoFirestore() {
+  try {
+    await db.collection('sige_ping').doc('test').get();
+    console.log('[Firestore] Conexão OK');
+    return true;
+  } catch (e) {
+    console.error('[Firestore] Falha ao conectar:', e.message);
+    return false;
   }
-  const dir = path.resolve(process.cwd(), 'auth_info');
+}
+
+/** Atualiza o documento de estado do WhatsApp no Firestore */
+async function atualizarEstado({ status, reiniciarSessao = undefined } = {}) {
+  try {
+    const data = {
+      status,
+      ultimaAtualizacao: FieldValue.serverTimestamp(),
+    };
+    if (reiniciarSessao !== undefined) data.reiniciarSessao = reiniciarSessao;
+    await CONFIG_REF.set(data, { merge: true });
+  } catch (e) {
+    console.error('[Firestore] Erro ao atualizar estado:', e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auth local
+// ---------------------------------------------------------------------------
+function obterDiretorioAuth() {
+  const dir = process.env.VERCEL || process.platform === 'linux'
+    ? path.join(os.tmpdir(), 'sige_auth_info')
+    : path.resolve(process.cwd(), 'auth_info');
+
   if (!fs.existsSync(dir)) {
     try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
   }
   return dir;
 }
 
-const TELEFONE_CHEFE_CONFIG = (process.env.TELEFONE_CHEFE || '').trim().replace(/['"]/g, '');
-const CHEFE_DIGITOS = TELEFONE_CHEFE_CONFIG.replace(/\D/g, '');
-const CHEFE_ULTIMOS_8 = CHEFE_DIGITOS.slice(-8);
-const TELEFONE_CHEFE_JID = CHEFE_DIGITOS ? CHEFE_DIGITOS + '@s.whatsapp.net' : '';
-
-const LID_CHEFE_CONFIG = (process.env.LID_CHEFE || '').trim().replace(/['"]/g, '');
-const LID_CHEFE_ID = LID_CHEFE_CONFIG.split('@')[0].split(':')[0];
-
-// Conjunto de LIDs do WhatsApp conhecidos do Chefe (carregado do .env e aprendido dinamicamente)
-const lidsChefeConhecidos = new Set();
-if (LID_CHEFE_ID) {
-  lidsChefeConhecidos.add(LID_CHEFE_ID);
+async function limparAuthLocal() {
+  const dir = obterDiretorioAuth();
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  console.log('[WhatsApp] auth_info removido');
 }
 
-export function aprenderLidChefe(jid) {
-  if (!jid) return;
-  const id = jid.split('@')[0].split(':')[0];
-  if (id && !lidsChefeConhecidos.has(id)) {
-    lidsChefeConhecidos.add(id);
-    console.log(`\n============================================================`);
-    console.log(`🎯 [LID DO CHEFE IDENTIFICADO]: ${id}@lid`);
-    console.log(`👉 Para fixar no Vercel ou .env, adicione:`);
-    console.log(`LID_CHEFE=${id}@lid`);
-    console.log(`============================================================\n`);
+// ---------------------------------------------------------------------------
+// Estado runtime
+// ---------------------------------------------------------------------------
+let sock = null;
+let connectionStatus = 'disconnected';
+let reconectando = false;
+let cacheMsgParaSolicitacao = new Map();
 
-    // Sincroniza o LID descoberto no Firestore
-    try {
-      db.collection('sistema').doc('whatsapp').set({
-        lidChefeRecente: `${id}@lid`,
-        lidsConhecidos: Array.from(lidsChefeConhecidos),
-        ultimoLidDetectadoEm: FieldValue.serverTimestamp()
-      }, { merge: true }).catch(() => {});
-    } catch (_) {}
-  }
+export function getWhatsAppState() {
+  return { sock, status: connectionStatus, cacheMsgParaSolicitacao };
 }
 
-let sockAtual = null;
-let currentQRDataUrl = null;
-let rawQRString = null;
-let connectionStatus = 'disconnected'; // 'disconnected' | 'connecting' | 'waiting_qr' | 'connected'
-let lastDisconnectReason = null;
-let callbacksOnOpen = [];
-let qrWaiters = [];
-
-const cacheMsgParaSolicitacao = new Map();
-const decisoesEmProcessamento = new Set();
-
-function notificarWaiters() {
-  const estado = getWhatsAppState();
-  const waiters = [...qrWaiters];
-  qrWaiters = [];
-  waiters.forEach((resolve) => {
-    try { resolve(estado); } catch (_) {}
-  });
-}
-
-/**
- * Aguarda de forma assíncrona até que o QR Code seja gerado ou o socket conecte
- */
-export function aguardarQRouConexao(timeoutMs = 9000) {
-  if (currentQRDataUrl || connectionStatus === 'connected') {
-    return Promise.resolve(getWhatsAppState());
-  }
-
-  return new Promise((resolve) => {
-    let concluido = false;
-
-    const wrappedResolve = (estado) => {
-      if (!concluido) {
-        concluido = true;
-        resolve(estado);
-      }
-    };
-
-    qrWaiters.push(wrappedResolve);
-
-    setTimeout(() => {
-      if (!concluido) {
-        concluido = true;
-        qrWaiters = qrWaiters.filter((w) => w !== wrappedResolve);
-        resolve(getWhatsAppState());
-      }
-    }, timeoutMs);
-  });
-}
-
-export function onWhatsAppOpen(cb) {
-  if (connectionStatus === 'connected' && sockAtual) {
-    try { cb(sockAtual); } catch (e) { console.error(e); }
-  } else {
-    callbacksOnOpen.push(cb);
-  }
-}
-
-export function ehDoChefe(msgKey) {
-  if (!msgKey) return false;
-  const remetente = msgKey.remoteJid || '';
-  const participant = msgKey.participant || '';
-
-  const rLid = remetente.split('@')[0].split(':')[0];
-  const pLid = participant.split('@')[0].split(':')[0];
-
-  // 1. Checagem por LID do WhatsApp (configurado no .env ou auto-detectado dinamicamente)
-  if (lidsChefeConhecidos.has(rLid) || lidsChefeConhecidos.has(pLid)) {
-    return true;
-  }
-
-  // 2. Checagem por Telefone (últimos 8 dígitos ou número completo)
-  const extrairDigitos = (jid) => (jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
-  const rDigitos = extrairDigitos(remetente);
-  const pDigitos = extrairDigitos(participant);
-
-  if (CHEFE_ULTIMOS_8 && (rDigitos.endsWith(CHEFE_ULTIMOS_8) || pDigitos.endsWith(CHEFE_ULTIMOS_8))) {
-    return true;
-  }
-  if (CHEFE_DIGITOS && (rDigitos === CHEFE_DIGITOS || pDigitos === CHEFE_DIGITOS)) {
-    return true;
-  }
-
-  return false;
-}
-
-export function identificarAcao(textoOuEmoji) {
-  if (!textoOuEmoji) return null;
-  const valor = textoOuEmoji.trim().toLowerCase();
-
-  if (/👍|✅|✔️|🆗|👏|🙌|💚|🟢/.test(valor)) return 'aprovar';
-  if (/👎|❌|✖️|🚫|⛔|🔴/.test(valor)) return 'rejeitar';
-
-  if (/^(aprovar|aprovado|aprova|aceitar|aceito|sim|ok)$/i.test(valor)) return 'aprovar';
-  if (/^(rejeitar|rejeitado|rejeita|recusar|recuso|não|nao)$/i.test(valor)) return 'rejeitar';
-
-  return null;
-}
-
-export async function processarDecisao({ solicitacaoId, whatsappMsgId, acao, remetenteJid, sock = sockAtual }) {
-  const chaveTemporaria = solicitacaoId || whatsappMsgId;
-  if (chaveTemporaria && decisoesEmProcessamento.has(chaveTemporaria)) return;
-  if (chaveTemporaria) {
-    decisoesEmProcessamento.add(chaveTemporaria);
-    setTimeout(() => decisoesEmProcessamento.delete(chaveTemporaria), 10000);
-  }
-
-  try {
-    let docRef = null;
-    let docSnap = null;
-
-    if (solicitacaoId) {
-      docRef = db.collection('solicitacoes_login').doc(solicitacaoId);
-      docSnap = await docRef.get();
-    }
-
-    if ((!docSnap || !docSnap.exists) && whatsappMsgId && cacheMsgParaSolicitacao.has(whatsappMsgId)) {
-      const idCache = cacheMsgParaSolicitacao.get(whatsappMsgId);
-      docRef = db.collection('solicitacoes_login').doc(idCache);
-      docSnap = await docRef.get();
-    }
-
-    if ((!docSnap || !docSnap.exists) && whatsappMsgId) {
-      const consulta = await db.collection('solicitacoes_login')
-        .where('whatsappMsgId', '==', whatsappMsgId)
-        .limit(1)
-        .get();
-
-      if (!consulta.empty) {
-        docSnap = consulta.docs[0];
-        docRef = docSnap.ref;
-      }
-    }
-
-    if (!docSnap || !docSnap.exists) {
-      console.log(`[Aviso] Solicitação não localizada para ID=${solicitacaoId || 'N/A'}, MsgId=${whatsappMsgId || 'N/A'}`);
-      if (remetenteJid && sock) {
-        await sock.sendMessage(remetenteJid, {
-          text: `❌ Não foi possível localizar a solicitação correspondente a esta ação.`
-        });
-      }
-      return;
-    }
-
-    const id = docSnap.id;
-    if (decisoesEmProcessamento.has(id)) return;
-    decisoesEmProcessamento.add(id);
-    setTimeout(() => decisoesEmProcessamento.delete(id), 10000);
-
-    const dados = docSnap.data();
-    const nome = dados.nome || dados.nomeFuncionario || 'Usuário';
-
-    if (dados.status !== 'pendente') {
-      const msgStatus = `ℹ️ A solicitação de *${nome}* já foi *${dados.status}* anteriormente.`;
-      console.log(`[Info] ${msgStatus}`);
-      if (remetenteJid && sock) {
-        await sock.sendMessage(remetenteJid, { text: msgStatus });
-      }
-      return;
-    }
-
-    const novoStatus = acao === 'aprovar' ? 'aprovado' : 'rejeitado';
-
-    await docRef.update({
-      status: novoStatus,
-      respondidoEm: FieldValue.serverTimestamp()
-    });
-
-    if (novoStatus === 'aprovado') {
-      await db.collection('usuarios').doc(id).set({
-        nome: nome,
-        email: dados.email,
-        telefone: dados.telefone || '',
-        perfil: dados.perfil || 'operador',
-        senha: dados.senha,
-        status: 'aprovado',
-        criadoEm: dados.criadoEm || new Date().toISOString(),
-        ultimoLogin: new Date().toISOString()
-      });
-
-      console.log(`[Sucesso] ✅ Usuário ${nome} (${id}) APROVADO e adicionado em 'usuarios'!`);
-      if (remetenteJid && sock) {
-        await sock.sendMessage(remetenteJid, {
-          text: `👍 Solicitação de *${nome}* foi *APROVADA* com sucesso!\nUsuário liberado para acessar o SIGE.`
-        });
-      }
-
-      if (dados.telefone) {
-        const msgBoasVindas = `🎉 *ACESSO APROVADO - SIGE INDUSTRIAL*\n\n` +
-                              `Olá, *${nome}*! 👋\n` +
-                              `Sua solicitação de acesso ao sistema *SIGE* foi *APROVADA* com sucesso pelo gestor!\n\n` +
-                              `🏷️ *Perfil Autorizado:* ${dados.perfil || 'Operador'}\n` +
-                              `📧 *Login:* ${dados.email}\n\n` +
-                              `👉 Você já pode abrir o aplicativo e fazer login com sua senha cadastrada. Bom trabalho!`;
-
-        await enviarMensagemWhatsApp(dados.telefone, msgBoasVindas);
-      }
-
-      // Envio análogo por E-mail ao funcionário aprovado
-      if (dados.email) {
-        try {
-          const htmlAprovado = gerarTemplateNotificacao({
-            titulo: '🎉 Seu Acesso foi Aprovado!',
-            subtitulo: 'Bem-vindo ao SIGE - Indústria & Manutenção',
-            corHeader: '#16a34a',
-            itens: [
-              { label: 'Colaborador', valor: nome },
-              { label: 'Login / E-mail', valor: dados.email },
-              { label: 'Perfil Concedido', valor: (dados.perfil || 'operador').toUpperCase() },
-              { label: 'Status', valor: '🟢 Ativo e Liberado' }
-            ],
-            rodape: '👉 Você já pode abrir o aplicativo e fazer login com suas credenciais cadastradas.'
-          });
-
-          await enviarEmail({
-            to: dados.email,
-            subject: '🎉 [SIGE] Seu cadastro foi aprovado com sucesso!',
-            html: htmlAprovado,
-            text: `Olá ${nome}! Sua solicitação de acesso ao SIGE foi aprovada pelo gestor. Seu login: ${dados.email}.`
-          });
-        } catch (_) {}
-      }
-    } else {
-      console.log(`[Sucesso] ❌ Solicitação de ${nome} (${id}) REJEITADA.`);
-      if (remetenteJid && sock) {
-        await sock.sendMessage(remetenteJid, {
-          text: `❌ A solicitação de *${nome}* foi *REJEITADA*.`
-        });
-      }
-
-      if (dados.telefone) {
-        const msgRejeitado = `❌ *SOLICITAÇÃO DE ACESSO - SIGE*\n\n` +
-                             `Olá, *${nome}*.\n` +
-                             `Informamos que sua solicitação de acesso ao sistema SIGE foi analisada e *rejeitada* pela gestão.\n` +
-                             `Em caso de dúvidas, procure o seu supervisor imediato.`;
-        await enviarMensagemWhatsApp(dados.telefone, msgRejeitado);
-      }
-
-      // Envio análogo por E-mail ao funcionário rejeitado
-      if (dados.email) {
-        try {
-          const htmlRejeitado = gerarTemplateNotificacao({
-            titulo: 'Solicitação de Acesso Não Aprovada',
-            subtitulo: 'SIGE - Indústria & Manutenção',
-            corHeader: '#dc2626',
-            itens: [
-              { label: 'Colaborador', valor: nome },
-              { label: 'E-mail', valor: dados.email },
-              { label: 'Status', valor: '❌ Rejeitado' }
-            ],
-            rodape: 'Informamos que seu pedido de cadastro foi analisado e não foi aprovado pela gestão. Em caso de dúvidas, consulte o supervisor imediato.'
-          });
-
-          await enviarEmail({
-            to: dados.email,
-            subject: '❌ [SIGE] Solicitação de Acesso',
-            html: htmlRejeitado,
-            text: `Olá ${nome}. Sua solicitação de acesso ao SIGE foi rejeitada pela gestão.`
-          });
-        } catch (_) {}
-      }
-    }
-  } catch (error) {
-    console.error('Erro ao processar decisão no Firestore:', error);
-  }
-}
-
+// ---------------------------------------------------------------------------
+// Envio de mensagem
+// ---------------------------------------------------------------------------
 export async function enviarMensagemWhatsApp(destinatario, mensagem) {
-  if (!sockAtual || connectionStatus !== 'connected') {
-    console.warn('[WhatsApp] Tentativa de envio com WhatsApp desconectado.');
+  if (!sock || connectionStatus !== 'connected') {
+    console.warn('[WhatsApp] Tentativa de envio sem conexão ativa');
     return { sucesso: false, erro: 'WhatsApp não está conectado' };
   }
 
   let jid = destinatario;
   if (!jid) {
-    jid = TELEFONE_CHEFE_JID;
-  } else if (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid')) {
-    // formato ok
-  } else {
-    let digitos = jid.replace(/\D/g, '');
-    if (digitos.length === 10 || digitos.length === 11) {
-      digitos = '55' + digitos;
-    }
-    jid = digitos + '@s.whatsapp.net';
+    const tel = (process.env.TELEFONE_CHEFE || '').trim().replace(/['"]+/g, '');
+    const digitos = tel.replace(/\D/g, '');
+    jid = digitos ? `${digitos}@s.whatsapp.net` : null;
+  } else if (!jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@lid')) {
+    const digitos = jid.replace(/\D/g, '');
+    const numero = (digitos.length === 10 || digitos.length === 11)
+      ? `55${digitos}` : digitos;
+    jid = `${numero}@s.whatsapp.net`;
   }
 
+  if (!jid) return { sucesso: false, erro: 'Destinatário inválido' };
+
   try {
-    const sent = await sockAtual.sendMessage(jid, { text: mensagem });
-    console.log(`[WhatsApp] Mensagem enviada com sucesso para ${jid}`);
+    const sent = await sock.sendMessage(jid, { text: mensagem });
+    console.log(`[WhatsApp] Mensagem enviada para ${jid}`);
     return { sucesso: true, messageId: sent?.key?.id };
-  } catch (error) {
-    console.error(`[WhatsApp] Falha ao enviar para ${jid}:`, error?.message || error);
-    return { sucesso: false, erro: error?.message || String(error) };
+  } catch (e) {
+    console.error(`[WhatsApp] Falha ao enviar para ${jid}:`, e?.message || e);
+    return { sucesso: false, erro: e?.message || String(e) };
   }
 }
 
-export async function connectToWhatsApp({ printTerminal = false, authFolder = null } = {}) {
-  if (sockAtual && connectionStatus === 'connected') {
-    return sockAtual;
+// ---------------------------------------------------------------------------
+// Desconexão
+// ---------------------------------------------------------------------------
+async function desconectarCliente() {
+  if (sock) {
+    try { await sock.logout(); } catch (_) {}
+    sock = null;
   }
+  connectionStatus = 'disconnected';
+  await atualizarEstado({ status: 'desconectado' });
+}
 
-  const pastaFinalAuth = authFolder || obterDiretorioAuth();
-  connectionStatus = 'connecting';
+// ---------------------------------------------------------------------------
+// Conexão principal
+// ---------------------------------------------------------------------------
+export async function conectarCliente() {
+  if (reconectando) return;
+  reconectando = true;
 
   try {
-    const { state, saveCreds } = await useMultiFileAuthState(pastaFinalAuth);
+    const authFolder = obterDiretorioAuth();
+    const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
-    const sock = makeWASocket({
+    sock = makeWASocket({
       auth: state,
-      printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
       browser: Browsers.windows('Desktop'),
       syncFullHistory: false,
-      defaultQueryTimeoutMs: 60000,
-      keepAliveIntervalMs: 25000,
-      connectTimeoutMs: 45000
+      defaultQueryTimeoutMs: 60_000,
+      keepAliveIntervalMs: 25_000,
+      connectTimeoutMs: 60_000,
     });
 
-    sockAtual = sock;
-
+    // ── Eventos de conexão ──────────────────────────────────────────────
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        rawQRString = qr;
         connectionStatus = 'waiting_qr';
+        await atualizarEstado({ status: 'aguardando_qr' });
+        console.log('\n====================================================');
+        console.log('📱 ESCANEIE O QR CODE ABAIXO COM SEU WHATSAPP:');
+        console.log('====================================================');
+        qrcodeTerminal.generate(qr, { small: true });
+        console.log('====================================================\n');
+      }
+
+      if (connection === 'open') {
+        connectionStatus = 'connected';
+        reconectando = false;
+        await atualizarEstado({ status: 'conectado' });
+        console.log('[WhatsApp] ✅ Conectado ao WhatsApp');
+
+        // Notifica o chefe sobre a inicialização do bot
         try {
-          currentQRDataUrl = await qrcode.toDataURL(qr, { margin: 2, scale: 8 });
-        } catch (_) {}
-
-        if (printTerminal) {
-          console.log('\n📷 Escaneie o QR Code abaixo com o seu WhatsApp:');
-          qrcodeTerminal.generate(qr, { small: true });
+          const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+          const msgBoasVindas = `🟢 *SIGE INDUSTRIAL - BOT ONLINE*\n\n` +
+                                `Olá! O bot do WhatsApp foi conectado e está 100% operacional.\n` +
+                                `📅 *Data/Hora:* ${agora}\n` +
+                                `⚙️ *Status:* Monitoramento de solicitações, aprovações e máquinas ativo!`;
+          await enviarMensagemWhatsApp(process.env.TELEFONE_CHEFE, msgBoasVindas);
+        } catch (errNotif) {
+          console.error('[WhatsApp] Falha ao enviar aviso de conexão para o chefe:', errNotif?.message || errNotif);
         }
-
-        notificarWaiters();
       }
 
       if (connection === 'close') {
-        const statusCode = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.code;
-        lastDisconnectReason = statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const badMac = lastDisconnect?.error?.message?.includes('Bad MAC');
+        const loggedOut = statusCode === DisconnectReason.loggedOut;
 
         connectionStatus = 'disconnected';
-        currentQRDataUrl = null;
-        rawQRString = null;
+        reconectando = false;
+        await atualizarEstado({ status: 'desconectado' });
+        console.warn(`[WhatsApp] Conexão encerrada – código: ${statusCode}`);
 
-        try {
-          await db.collection('config').doc('whatsapp').set({
-            status: 'desconectado',
-            qrCode: null,
-            qrDataUrl: null,
-            reiniciarSessao: false,
-            ultimaAtualizacao: FieldValue.serverTimestamp(),
-            lastDisconnectReason
-          }, { merge: true });
-        } catch (_) {}
-
-        try {
-          sock.ev.removeAllListeners();
-          sock.end?.();
-        } catch (_) {}
-
-        if (shouldReconnect) {
-          console.log(`[WhatsApp] Reconectando em 2s... (código: ${statusCode})`);
-          setTimeout(() => connectToWhatsApp({ printTerminal, authFolder: pastaFinalAuth }), 2000);
+        if (badMac || loggedOut) {
+          // Sessão corrompida ou deslogado: limpa auth e reconecta do zero
+          console.warn('[WhatsApp] Limpando sessão e reconectando...');
+          await limparAuthLocal();
+          setTimeout(conectarCliente, 3_000);
         } else {
-          console.log('❌ Sessão desconectada ou credenciais revogadas pelo WhatsApp.');
-          if (fs.existsSync(pastaFinalAuth)) {
-            try { fs.rmSync(pastaFinalAuth, { recursive: true, force: true }); } catch (_) {}
+          // Queda temporária: tenta reconectar
+          setTimeout(conectarCliente, 5_000);
+        }
+      }
+    });
+
+    // ── Mensagens e Reações recebidas ─────────────────────────────────
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      for (const m of messages) {
+        if (!m.message || m.key.fromMe) continue;
+        const de = m.key.remoteJid;
+        const texto =
+          m.message?.conversation ??
+          m.message?.extendedTextMessage?.text ??
+          '';
+
+        // Trata reação recebida (ex: 👍, ✅, 👎, ❌)
+        const reacao = m.message?.reactionMessage;
+
+        // 1. Salva na coleção 'mensagens' (espelho Firestore)
+        try {
+          await db.collection('mensagens').add({
+            de,
+            texto: texto || (reacao ? `[Reação: ${reacao.text}]` : '[mídia ou não-texto]'),
+            timestamp: FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          console.error('[Firestore] Erro ao salvar mensagem:', e.message);
+        }
+
+        const telefoneChefeConfig = (process.env.TELEFONE_CHEFE || '').trim().replace(/\D/g, '');
+        const deChefe = de && telefoneChefeConfig && de.includes(telefoneChefeConfig);
+        if (!deChefe) continue;
+
+        // 2.A. Decisão por REAÇÃO direta na mensagem do bot
+        if (reacao && reacao.text) {
+          const emoji = reacao.text.trim();
+          const targetMsgId = reacao.key?.id;
+
+          const emojiAprova = ['👍', '✅', '👌', '👏', '🟢'].includes(emoji);
+          const emojiRejeita = ['👎', '❌', '🚫', '🛑', '🔴'].includes(emoji);
+
+          if (emojiAprova || emojiRejeita) {
+            try {
+              let idSolicitacao = null;
+
+              // Tenta achar pelo whatsappMsgId vinculado à mensagem reagida
+              if (targetMsgId) {
+                const snapMsg = await db.collection('solicitacoes_login')
+                  .where('whatsappMsgId', '==', targetMsgId)
+                  .where('status', 'in', ['pendente', 'aguardando'])
+                  .limit(1)
+                  .get();
+
+                if (!snapMsg.empty) {
+                  idSolicitacao = snapMsg.docs[0].id;
+                }
+              }
+
+              // Se não encontrou pelo ID específico, pega a pendente mais recente
+              if (!idSolicitacao) {
+                const snapRecente = await db.collection('solicitacoes_login')
+                  .where('status', 'in', ['pendente', 'aguardando'])
+                  .orderBy('criadoEm', 'desc')
+                  .limit(1)
+                  .get();
+                if (!snapRecente.empty) {
+                  idSolicitacao = snapRecente.docs[0].id;
+                }
+              }
+
+              if (idSolicitacao) {
+                const acao = emojiAprova ? 'aprovar' : 'rejeitar';
+                console.log(`[WhatsApp Reação] Chefe reagiu ${emoji} -> Executando ${acao} na solicitação ${idSolicitacao}`);
+
+                const { default: handlerDecidir } = await import('./decidir.js');
+                const reqMock = { query: { id: idSolicitacao, acao }, headers: { accept: 'application/json' } };
+                const resMock = {
+                  setHeader: () => {},
+                  status: () => ({ json: () => {}, send: () => {}, end: () => {} }),
+                };
+                await handlerDecidir(reqMock, resMock);
+
+                const msgConfirmacao = emojiAprova
+                  ? `✅ Solicitação autorizada via reação (${emoji})!`
+                  : `❌ Solicitação recusada via reação (${emoji}) e removida.`;
+                await enviarMensagemWhatsApp(process.env.TELEFONE_CHEFE, msgConfirmacao);
+              }
+            } catch (errReacao) {
+              console.error('[WhatsApp Reação] Erro ao processar reação do chefe:', errReacao);
+            }
           }
         }
 
-        notificarWaiters();
-      } else if (connection === 'open') {
-        console.log('✅ WhatsApp conectado com sucesso e pronto!');
-        connectionStatus = 'connected';
-        currentQRDataUrl = null;
-        rawQRString = null;
+        // 2.B. Decisão por TEXTO (ex: "aprovar", "sim", "rejeitar", "não")
+        if (texto) {
+          const textoLimpo = texto.trim().toLowerCase();
+          const ehAprovacao = textoLimpo === 'aprovar' || textoLimpo === 'aprovado' || textoLimpo === 'sim' || textoLimpo.startsWith('aprovar');
+          const ehRejeicao = textoLimpo === 'rejeitar' || textoLimpo === 'rejeitado' || textoLimpo === 'nao' || textoLimpo === 'não' || textoLimpo.startsWith('rejeitar');
 
-        // Atualiza status no Firestore para o app no Vercel saber que o bot local está online
-        try {
-          await db.collection('sistema').doc('whatsapp').set({
-            status: 'connected',
-            conectado: true,
-            conectadoEm: FieldValue.serverTimestamp(),
-            atualizadoEm: FieldValue.serverTimestamp(),
-            telefoneChefe: TELEFONE_CHEFE_CONFIG,
-            lidsConhecidos: Array.from(lidsChefeConhecidos)
-          }, { merge: true });
-        } catch (_) {}
-
-        const callbacks = [...callbacksOnOpen];
-        callbacksOnOpen = [];
-        callbacks.forEach((cb) => {
-          try { cb(sock); } catch (e) { console.error(e); }
-        });
-
-        notificarWaiters();
-      }
-    });
-
-    sock.ev.on('creds.update', saveCreds);
-
-    // 1. Escuta REAÇÕES com emojis (👍, 👎, ✅, ❌)
-    sock.ev.on('messages.reaction', async (reactions) => {
-      for (const item of reactions) {
-        const { key, reaction } = item;
-        const targetMsgId = key?.id;
-        const emoji = reaction?.text;
-
-        if (!emoji || !targetMsgId) continue;
-
-        const acao = identificarAcao(emoji);
-        if (!acao) continue;
-
-        // Se a reação foi feita em uma mensagem enviada pelo bot ao chefe sobre uma solicitação
-        let ehMsgDeSolicitacao = cacheMsgParaSolicitacao.has(targetMsgId);
-        if (!ehMsgDeSolicitacao) {
-          try {
-            const snap = await db.collection('solicitacoes_login')
-              .where('whatsappMsgId', '==', targetMsgId)
-              .limit(1)
-              .get();
-            if (!snap.empty) {
-              ehMsgDeSolicitacao = true;
-              cacheMsgParaSolicitacao.set(targetMsgId, snap.docs[0].id);
-            }
-          } catch (_) {}
-        }
-
-        // Se é uma mensagem que o bot enviou para aprovação, a reação SÓ PODE vir do chefe!
-        const autorizado = ehDoChefe(key) || ehMsgDeSolicitacao;
-
-        if (autorizado) {
-          aprenderLidChefe(key.remoteJid);
-          if (key.participant) aprenderLidChefe(key.participant);
-
-          console.log(`[Reação Detectada] Emoji "${emoji}" -> Ação: ${acao} na msg ${targetMsgId} (De: ${key.remoteJid})`);
-
-          await processarDecisao({
-            whatsappMsgId: targetMsgId,
-            acao,
-            remetenteJid: key.remoteJid,
-            sock
-          });
-        } else {
-          console.log(`[Reação ignorada] Emoji "${emoji}" na msg ${targetMsgId} de ${key.remoteJid}${key.participant ? ' (Part: ' + key.participant + ')' : ''} (Não pertence a solicitação ativa nem bate com o chefe)`);
-        }
-      }
-    });
-
-    // 2. Escuta MENSAGENS recebidas
-    sock.ev.on('messages.upsert', async (m) => {
-      if (m.type !== 'notify') return;
-
-      for (const msg of m.messages) {
-        if (!msg.message) continue;
-        const remetente = msg.key.remoteJid;
-
-        if (msg.message.reactionMessage) continue;
-        if (msg.key.fromMe) continue;
-
-        const quotedMsgId = msg.message.extendedTextMessage?.contextInfo?.stanzaId;
-        const textoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-        const textoLimpo = textoMensagem.replace(/[*_~`]/g, '').trim();
-
-        if (!textoLimpo) continue;
-
-        const matchComando = textoLimpo.match(/^(aprovar|rejeitar)\s+(.+)$/i);
-        const acaoCitada = identificarAcao(textoLimpo);
-
-        // Verifica se está citando uma mensagem de solicitação pendente enviada ao chefe
-        let citaSolicitacao = false;
-        if (quotedMsgId) {
-          if (cacheMsgParaSolicitacao.has(quotedMsgId)) {
-            citaSolicitacao = true;
-          } else {
+          if (ehAprovacao || ehRejeicao) {
             try {
               const snap = await db.collection('solicitacoes_login')
-                .where('whatsappMsgId', '==', quotedMsgId)
+                .where('status', 'in', ['pendente', 'aguardando'])
+                .orderBy('criadoEm', 'desc')
                 .limit(1)
                 .get();
+
               if (!snap.empty) {
-                citaSolicitacao = true;
-                cacheMsgParaSolicitacao.set(quotedMsgId, snap.docs[0].id);
+                const docSolicitacao = snap.docs[0];
+                const idSolicitacao = docSolicitacao.id;
+                const acao = ehAprovacao ? 'aprovar' : 'rejeitar';
+
+                console.log(`[WhatsApp Decisão] Chefe respondeu "${texto}" -> Executando ${acao} no ID ${idSolicitacao}`);
+
+                const { default: handlerDecidir } = await import('./decidir.js');
+                const reqMock = { query: { id: idSolicitacao, acao }, headers: { accept: 'application/json' } };
+                const resMock = {
+                  setHeader: () => {},
+                  status: () => ({ json: () => {}, send: () => {}, end: () => {} }),
+                };
+                await handlerDecidir(reqMock, resMock);
+
+                const msgConfirmacao = ehAprovacao
+                  ? `✅ Cadastro de *${docSolicitacao.data().nome || 'Colaborador'}* foi *APROVADO* com sucesso!`
+                  : `❌ Solicitação de *${docSolicitacao.data().nome || 'Colaborador'}* foi *REJEITADA* e removida.`;
+                await enviarMensagemWhatsApp(process.env.TELEFONE_CHEFE, msgConfirmacao);
               }
-            } catch (_) {}
+            } catch (errDecisao) {
+              console.error('[WhatsApp Decisão] Erro ao processar resposta do chefe:', errDecisao);
+            }
           }
-        }
-
-        const autorizado = ehDoChefe(msg.key) || citaSolicitacao;
-        if (!autorizado) {
-          console.log(`[Mensagem Recebida] De: ${remetente}${msg.key.participant ? ' (Participante: ' + msg.key.participant + ')' : ''} | Texto: "${textoLimpo}" | Ignorada pois não corresponde ao chefe (Esperado Tel=${CHEFE_DIGITOS})`);
-          continue;
-        }
-
-        aprenderLidChefe(remetente);
-        if (msg.key.participant) aprenderLidChefe(msg.key.participant);
-
-        console.log(`[Mensagem do Chefe] "${textoLimpo}" de ${remetente}`);
-
-        if (matchComando) {
-          const acao = matchComando[1].toLowerCase();
-          const solicitacaoId = matchComando[2].trim();
-          await processarDecisao({ solicitacaoId, acao, remetenteJid: remetente, sock });
-          continue;
-        }
-
-        if (quotedMsgId && acaoCitada) {
-          await processarDecisao({ whatsappMsgId: quotedMsgId, acao: acaoCitada, remetenteJid: remetente, sock });
-          continue;
-        }
-
-        if (acaoCitada) {
-          await sock.sendMessage(remetente, {
-            text: `ℹ️ Para responder por texto, cite a mensagem da solicitação ou informe o ID junto:\nExemplo: *${acaoCitada} ID_DA_SOLICITACAO*\nOu simplesmente reaja à mensagem da solicitação com 👍 ou ❌.`
-          });
         }
       }
     });
 
-    return sock;
-  } catch (err) {
-    console.error('[WhatsApp] Erro ao inicializar socket Baileys:', err);
-    connectionStatus = 'disconnected';
-    notificarWaiters();
-    return null;
+    // ── Credenciais ─────────────────────────────────────────────────────
+    sock.ev.on('creds.update', saveCreds);
+
+  } catch (e) {
+    reconectando = false;
+    console.error('[WhatsApp] Erro ao conectar:', e?.message || e);
+    await atualizarEstado({ status: 'desconectado' });
+    setTimeout(conectarCliente, 10_000);
   }
 }
 
-export function getWhatsAppState() {
-  return {
-    sock: sockAtual,
-    status: connectionStatus,
-    hasQR: !!currentQRDataUrl,
-    qrDataUrl: currentQRDataUrl,
-    rawQR: rawQRString,
-    lastDisconnectReason,
-    telefoneChefe: TELEFONE_CHEFE_CONFIG,
-    lidChefe: LID_CHEFE_CONFIG,
-    cacheMsgParaSolicitacao
-  };
+// ---------------------------------------------------------------------------
+// Listeners Firestore
+// ---------------------------------------------------------------------------
+
+/** Reinicia sessão quando a flag é ativada pelo Flutter */
+function escutarReinicioSessao() {
+  CONFIG_REF.onSnapshot(async (snap) => {
+    const data = snap.data() ?? {};
+    if (data.reiniciarSessao === true) {
+      console.log('[WhatsApp] Flag reiniciarSessao detectada – reconectando');
+      await desconectarCliente();
+      await limparAuthLocal();
+      await CONFIG_REF.set({ reiniciarSessao: false }, { merge: true });
+      setTimeout(conectarCliente, 2_000);
+    }
+  }, (err) => console.error('[Firestore] Erro no listener config:', err.message));
 }
 
-export default {
-  connectToWhatsApp,
-  enviarMensagemWhatsApp,
-  getWhatsAppState,
-  onWhatsAppOpen,
-  processarDecisao,
-  ehDoChefe,
-  identificarAcao,
-  aguardarQRouConexao,
-  obterDiretorioAuth
-};
+/** Processa fila de mensagens a enviar */
+function escutarFilaEnvio() {
+  db.collection('fila_envio')
+    .where('status', '==', 'pendente')
+    .onSnapshot(async (snap) => {
+      for (const doc of snap.docs) {
+        const { para, texto } = doc.data();
+        if (!texto) continue;
+        try {
+          await enviarMensagemWhatsApp(para, texto);
+          await doc.ref.update({
+            status: 'enviado',
+            enviadoEm: FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          console.error('[WhatsApp] Erro ao processar fila_envio:', e.message);
+        }
+      }
+    }, (err) => console.error('[Firestore] Erro no listener fila_envio:', err.message));
+}
+
+// ---------------------------------------------------------------------------
+// Inicializador
+// ---------------------------------------------------------------------------
+export async function iniciarWhatsApp() {
+  // Inicia conexão do WhatsApp imediatamente (gera QR Code no terminal sem travar se a rede demorar)
+  conectarCliente().catch((err) => console.error('[WhatsApp] Erro inicial:', err?.message || err));
+
+  // Tenta conectar ao Firestore em segundo plano para não bloquear a geração do QR Code
+  (async () => {
+    let conectado = false;
+    while (!conectado) {
+      try {
+        await db.collection('sige_ping').doc('test').get();
+        console.log('[Firestore] Conexão OK');
+        conectado = true;
+        escutarReinicioSessao();
+        escutarFilaEnvio();
+      } catch (e) {
+        console.warn(`[Firestore] Tentando conectar... (${e?.message?.split('\n')[0] || e})`);
+        await new Promise((res) => setTimeout(res, 5000));
+      }
+    }
+  })();
+}
+
+// Compatibilidade com importações anteriores
+export { conectarCliente as connectToWhatsApp };
+
+export function onWhatsAppOpen(cb) {
+  if (connectionStatus === 'connected' && sock) {
+    try { cb(sock); } catch (e) { console.error(e); }
+    return;
+  }
+  const handler = async (update) => {
+    if (update?.connection === 'open' && sock) {
+      try { cb(sock); } catch (e) { console.error(e); }
+      sock.ev.off('connection.update', handler);
+    }
+  };
+  sock?.ev?.on('connection.update', handler);
+}

@@ -13,29 +13,37 @@ class WhatsAppStatusView extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 460),
         padding: const EdgeInsets.all(24),
         child: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance.collection('config').doc('whatsapp').snapshots(),
+          stream: FirebaseFirestore.instance
+              .collection('config')
+              .doc('whatsapp')
+              .snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-            final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+
+            final data =
+                snapshot.data!.data() as Map<String, dynamic>? ?? {};
             final status = data['status'] as String? ?? 'desconhecido';
-            final qrDataUrl = data['qrDataUrl'] as String?;
             final conectado = status == 'conectado';
+            final aguardando = status == 'aguardando_qr';
 
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // ── Cabeçalho ─────────────────────────────────────────────
                 Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: conectado ? Colors.green.withAlpha(25) : Colors.orange.withAlpha(25),
+                        color: conectado
+                            ? Colors.green.withAlpha(25)
+                            : Colors.orange.withAlpha(25),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
-                        conectado ? Icons.check_circle : Icons.qr_code_scanner,
+                        conectado ? Icons.check_circle : Icons.sync,
                         color: conectado ? Colors.green : Colors.orange,
                       ),
                     ),
@@ -43,7 +51,8 @@ class WhatsAppStatusView extends StatelessWidget {
                     const Expanded(
                       child: Text(
                         'Status da Integração WhatsApp',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
                     IconButton(
@@ -53,6 +62,8 @@ class WhatsAppStatusView extends StatelessWidget {
                   ],
                 ),
                 const Divider(height: 24),
+
+                // ── Conectado ─────────────────────────────────────────────
                 if (conectado) ...[
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -67,8 +78,11 @@ class WhatsAppStatusView extends StatelessWidget {
                         SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'WhatsApp conectado e operando!\nNotificações de máquinas e aprovações ativas.',
-                            style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                            'WhatsApp conectado e operando!\n'
+                            'Notificações de máquinas e aprovações ativas.',
+                            style: TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -76,44 +90,35 @@ class WhatsAppStatusView extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Todas as notificações de parada de máquina, falta de material, e solicitações de novos logins estão sendo direcionadas ao WhatsApp do Gestor.',
+                    'Todas as notificações de parada de máquina, falta de '
+                    'material e solicitações de novos logins estão sendo '
+                    'direcionadas ao WhatsApp do Gestor.',
                     style: TextStyle(fontSize: 13, color: Colors.grey),
                     textAlign: TextAlign.center,
                   ),
-                ] else if (qrDataUrl != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Image.memory(
-                      // Decode base64 Data URL
-                      base64Decode(qrDataUrl.split(',').last),
-                      width: 240,
-                      height: 240,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Abra o WhatsApp → Aparelhos Conectados → Conectar um aparelho e aponte a câmera para o QR Code acima.',
-                    style: TextStyle(fontSize: 13, color: Colors.grey),
-                    textAlign: TextAlign.center,
-                  ),
+
+                // ── Aguardando QR / reconectando ─────────────────────────
                 ] else ...[
-                  const Icon(Icons.sync, size: 48, color: Colors.blue),
+                  const Icon(Icons.sync, size: 48, color: Colors.orange),
                   const SizedBox(height: 12),
                   Text(
-                    status == 'aguardando_qr' ? 'Aguardando leitura do QR Code' : 'Conectando socket…',
-                    style: const TextStyle(fontWeight: FontWeight.w500),
+                    aguardando
+                        ? 'Aguardando conexão do WhatsApp'
+                        : 'Servidor local offline ou iniciando…',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w500, fontSize: 15),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Aguardando o servidor gerar o código de conexão...',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  Text(
+                    aguardando
+                        ? 'Escaneie o QR Code diretamente no terminal onde o '
+                          'servidor está rodando (WhatsApp → Aparelhos '
+                          'Conectados → Conectar um aparelho).'
+                        : 'Inicie o servidor Node.js local e aguarde a '
+                          'atualização automática do status.',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ],

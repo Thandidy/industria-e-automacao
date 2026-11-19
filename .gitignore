@@ -57,6 +57,7 @@ yarn-error.log*
 auth_info/
 .env
 firebase-key.json
+.firebase-key.json
 
 # Build output para Vercel
 dist/

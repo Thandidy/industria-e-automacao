@@ -49,8 +49,8 @@ export default async function handler(req, res) {
     const dados = snap.data();
     const nome = dados.nome || dados.nomeFuncionario || 'Colaborador';
 
-    if (dados.status !== 'pendente') {
-      const corJaDecidido = dados.status === 'aprovado' ? '#16a34a' : '#dc2626';
+    if (dados.status !== 'pendente' && dados.status !== 'aguardando') {
+      const corJaDecidido = (dados.status === 'aprovado' || dados.status === 'aprovada') ? '#16a34a' : '#dc2626';
       return res.status(200).send(`
         <!DOCTYPE html>
         <html>
@@ -123,6 +123,14 @@ export default async function handler(req, res) {
           text: `Olá ${nome}! Sua solicitação de acesso ao SIGE foi aprovada pelo gestor. Seu login: ${dados.email}.`
         }).catch(() => {});
       }
+
+      // O documento é mantido com status 'aprovado' para que o Flutter reaja em tempo real.
+      // Após 60 s, exclui para manter a coleção limpa.
+      setTimeout(async () => {
+        try { await docRef.delete(); } catch (_) {}
+        console.log(`[decidir.js] Solicitação ${id} aprovada e removida após delay.`);
+      }, 60_000);
+
     } else {
       // Se rejeitado, notifica o funcionário
       if (dados.telefone) {
@@ -156,6 +164,10 @@ export default async function handler(req, res) {
           text: `Olá ${nome}. Sua solicitação de acesso ao SIGE foi rejeitada pela gestão.`
         }).catch(() => {});
       }
+
+      // Exclui o documento para manter a coleção limpa após rejeição
+      await docRef.delete();
+      console.log(`[decidir.js] Solicitação ${id} rejeitada e removida da coleção.`);
     }
 
     // Se a requisição veio em formato JSON

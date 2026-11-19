@@ -316,6 +316,34 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
     );
   }
 
+  Widget _buildRejeitado(ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.cancel_outlined, size: 80, color: Colors.red),
+        const SizedBox(height: 16),
+        Text(
+          'Solicitação Rejeitada',
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: Colors.red,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Sua solicitação de acesso foi rejeitada pelo gestor. '
+          'Em caso de dúvidas, procure seu supervisor.',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        OutlinedButton(
+          onPressed: () => setState(() => _solicitacaoId = null),
+          child: const Text('Tentar Novamente'),
+        ),
+      ],
+    );
+  }
+
   Widget _buildAguardandoAprovacao(ThemeData theme) {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
@@ -327,10 +355,16 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final data = snapshot.data?.data() as Map<String, dynamic>? ?? {};
+        // Se o documento não existe ou foi excluído
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return _buildRejeitado(theme);
+        }
+
+        final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
         final status = (data['status'] ?? 'pendente').toString().toLowerCase();
 
-        if (status == 'aprovado') {
+        // 1. Status Aprovado
+        if (status == 'aprovado' || status == 'aprovada') {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -359,33 +393,8 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
               ),
             ],
           );
-        } else if (status == 'rejeitado') {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cancel_outlined, size: 80, color: Colors.red),
-              const SizedBox(height: 16),
-              Text(
-                'Solicitação Rejeitada',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.red,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Sua solicitação de acesso foi rejeitada pelo gestor.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              OutlinedButton(
-                onPressed: () {
-                  setState(() => _solicitacaoId = null);
-                },
-                child: const Text('Tentar Novamente'),
-              ),
-            ],
-          );
+        } else if (status == 'rejeitado' || status == 'rejeitada' || status == 'negada') {
+          return _buildRejeitado(theme);
         }
 
         // Status Pendente
