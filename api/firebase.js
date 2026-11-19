@@ -42,6 +42,15 @@ export function getFirebaseAdmin() {
     }
   }
 
+  // 1.1 Variáveis individuais (comum em setups no Vercel para evitar problemas com base64/aspas)
+  if (!serviceAccount && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    serviceAccount = {
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    };
+  }
+
   // 2. Fallback: Arquivo firebase-key.json local
   if (!serviceAccount) {
     const possíveisCaminhos = [

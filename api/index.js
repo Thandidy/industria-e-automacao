@@ -35,6 +35,9 @@ let observadorRecuperacoesIniciado = false;
 // ---------------------------------------------------------------------------
 // Observador de novas solicitações de login
 // ---------------------------------------------------------------------------
+// Timestamp de inicialização: ignora documentos criados antes do bot ligar
+const TIMESTAMP_INICIALIZACAO = new Date();
+
 export function iniciarObservadorSolicitacoes() {
   if (observadorSolicitacoesIniciado) return;
   observadorSolicitacoesIniciado = true;
@@ -51,8 +54,19 @@ export function iniciarObservadorSolicitacoes() {
           const id    = change.doc.id;
           const dados = change.doc.data();
 
-          // Já foi notificado em execução anterior
+          // 1. Ignora se já foi notificado
           if (dados.notificado === true) return;
+
+          // 2. Ignora requisições antigas (anteriores à inicialização do bot)
+          if (dados.criadoEm) {
+            const dataCriacao = typeof dados.criadoEm.toDate === 'function'
+              ? dados.criadoEm.toDate()
+              : new Date(dados.criadoEm);
+
+            if (dataCriacao < TIMESTAMP_INICIALIZACAO) {
+              return; // ignora silenciosamente requisições anteriores
+            }
+          }
 
           const nome   = dados.nome || dados.nomeFuncionario || 'Colaborador';
           const perfil = dados.perfil || 'operador';
