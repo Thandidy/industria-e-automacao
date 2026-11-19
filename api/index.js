@@ -9,7 +9,6 @@ import {
 import { observarOcorrencias } from './mensagens.js';
 import { observarRecuperacoesSenha } from './recuperacao.js';
 import { enviarEmail, gerarTemplateNotificacao } from './email.js';
-import { enviarMensagemMeta } from './meta-whatsapp.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -108,33 +107,6 @@ export function iniciarObservadorSolicitacoes() {
             } catch (errEmail) {
               console.error('[Novo Cadastro E-mail] Erro ao notificar chefe por e-mail:', errEmail?.message || errEmail);
             }
-          }
-
-          // Disparo via Meta Cloud API Oficial com Botões Interativos
-          try {
-            if (CHEFE_DIGITOS) {
-              const resMeta = await enviarMensagemMeta({
-                to: CHEFE_DIGITOS,
-                texto: `🔔 *Nova Solicitação de Acesso (SIGE)*\n\n` +
-                       `👤 *Nome:* ${dados.nome || dados.nomeFuncionario}\n` +
-                       `📧 *E-mail:* ${dados.email}\n` +
-                       `🏷️ *Perfil:* ${(dados.perfil || 'operador').toUpperCase()}\n` +
-                       `🆔 *ID:* \`${id}\``,
-                botoes: [
-                  { id: `aprovar_${id}`, title: '✅ Aprovar' },
-                  { id: `rejeitar_${id}`, title: '❌ Rejeitar' }
-                ]
-              });
-
-              if (resMeta?.sucesso) {
-                await db.collection('solicitacoes_login').doc(id).update({
-                  notificadoMeta: true,
-                  metaWamid: resMeta.messageId
-                });
-              }
-            }
-          } catch (eMeta) {
-            console.error('[Novo Cadastro Meta] Falha:', eMeta?.message || eMeta);
           }
 
           try {

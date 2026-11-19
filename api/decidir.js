@@ -1,7 +1,6 @@
 // api/decidir.js
 import { db, FieldValue } from './firebase.js';
 import { enviarEmail, gerarTemplateNotificacao } from './email.js';
-import { enviarMensagemMeta } from './meta-whatsapp.js';
 import { enviarMensagemWhatsApp, getWhatsAppState } from './whatsapp.js';
 
 export default async function handler(req, res) {
@@ -87,7 +86,7 @@ export default async function handler(req, res) {
         ultimoLogin: new Date().toISOString()
       }, { merge: true });
 
-      // Notifica o funcionário por WhatsApp (Meta Cloud API ou Baileys)
+      // Notifica o funcionário por WhatsApp se bot local estiver ativo
       if (dados.telefone) {
         const msgWa = `🎉 *ACESSO APROVADO - SIGE INDUSTRIAL*\n\n` +
                       `Olá, *${nome}*! 👋\n` +
@@ -96,9 +95,6 @@ export default async function handler(req, res) {
                       `📧 *Login:* ${dados.email}\n\n` +
                       `👉 Você já pode abrir o aplicativo e fazer login com sua senha cadastrada. Bom trabalho!`;
 
-        // Tenta Meta API
-        enviarMensagemMeta({ to: dados.telefone, texto: msgWa }).catch(() => {});
-        // Fallback Baileys se conectado
         const waState = getWhatsAppState();
         if (waState.status === 'connected') {
           enviarMensagemWhatsApp(dados.telefone, msgWa).catch(() => {});
@@ -134,7 +130,6 @@ export default async function handler(req, res) {
                              `Olá, *${nome}*.\n` +
                              `Informamos que sua solicitação de acesso ao sistema SIGE foi analisada e *rejeitada* pela gestão.\n` +
                              `Em caso de dúvidas, procure o seu supervisor imediato.`;
-        enviarMensagemMeta({ to: dados.telefone, texto: msgRejeitado }).catch(() => {});
         const waState = getWhatsAppState();
         if (waState.status === 'connected') {
           enviarMensagemWhatsApp(dados.telefone, msgRejeitado).catch(() => {});
