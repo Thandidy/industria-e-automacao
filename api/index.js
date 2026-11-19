@@ -8,6 +8,7 @@ import {
 } from './whatsapp.js';
 import { observarOcorrencias } from './mensagens.js';
 import { observarRecuperacoesSenha } from './recuperacao.js';
+import { enviarEmail, gerarTemplateNotificacao } from './email.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -51,6 +52,36 @@ export function iniciarObservadorSolicitacoes() {
                            `• Reaja com 👍 ou ✅ nesta mensagem para *Aprovar*\n` +
                            `• Reaja com 👎 ou ❌ nesta mensagem para *Rejeitar*\n\n` +
                            `_Ou responda citando esta mensagem com "aprovar" ou "rejeitar"_`;
+
+          // Envio análogo por E-mail para o Chefe (EMAIL_CHEFE)
+          const emailChefe = (process.env.EMAIL_CHEFE || 'nathansoaresalves@outlook.com').trim();
+          if (emailChefe) {
+            try {
+              const htmlEmail = gerarTemplateNotificacao({
+                titulo: '🔔 Nova Solicitação de Acesso (SIGE)',
+                subtitulo: `Um novo funcionário solicitou cadastro no sistema`,
+                corHeader: '#0284c7',
+                itens: [
+                  { label: 'Nome', valor: dados.nome || dados.nomeFuncionario || 'Não informado' },
+                  { label: 'E-mail', valor: dados.email || 'Não informado' },
+                  { label: 'Telefone', valor: dados.telefone || 'Não informado' },
+                  { label: 'Perfil Solicitado', valor: (dados.perfil || 'operador').toUpperCase() },
+                  { label: 'ID do Cadastro', valor: `<code>${id}</code>` }
+                ],
+                rodape: '👉 Para aprovar ou rejeitar, responda via WhatsApp (reagindo com 👍/❌ à notificação) ou acerte pelo painel administrativo.'
+              });
+
+              await enviarEmail({
+                to: emailChefe,
+                subject: `🔔 [SIGE] Novo Cadastro de Funcionário: ${dados.nome || dados.nomeFuncionario}`,
+                html: htmlEmail,
+                text: `Nova solicitação de cadastro no SIGE:\nNome: ${dados.nome || dados.nomeFuncionario}\nE-mail: ${dados.email}\nPerfil: ${dados.perfil || 'operador'}\nID: ${id}`
+              });
+              console.log(`[Novo Cadastro E-mail] Notificação enviada para o chefe: ${emailChefe}`);
+            } catch (errEmail) {
+              console.error('[Novo Cadastro E-mail] Erro ao notificar chefe por e-mail:', errEmail?.message || errEmail);
+            }
+          }
 
           try {
             const { sock } = getWhatsAppState();

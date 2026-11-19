@@ -9,6 +9,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { db, FieldValue } from './firebase.js';
+import { enviarEmail, gerarTemplateNotificacao } from './email.js';
 
 dotenv.config();
 
@@ -264,6 +265,31 @@ export async function processarDecisao({ solicitacaoId, whatsappMsgId, acao, rem
 
         await enviarMensagemWhatsApp(dados.telefone, msgBoasVindas);
       }
+
+      // Envio análogo por E-mail ao funcionário aprovado
+      if (dados.email) {
+        try {
+          const htmlAprovado = gerarTemplateNotificacao({
+            titulo: '🎉 Seu Acesso foi Aprovado!',
+            subtitulo: 'Bem-vindo ao SIGE - Indústria & Manutenção',
+            corHeader: '#16a34a',
+            itens: [
+              { label: 'Colaborador', valor: nome },
+              { label: 'Login / E-mail', valor: dados.email },
+              { label: 'Perfil Concedido', valor: (dados.perfil || 'operador').toUpperCase() },
+              { label: 'Status', valor: '🟢 Ativo e Liberado' }
+            ],
+            rodape: '👉 Você já pode abrir o aplicativo e fazer login com suas credenciais cadastradas.'
+          });
+
+          await enviarEmail({
+            to: dados.email,
+            subject: '🎉 [SIGE] Seu cadastro foi aprovado com sucesso!',
+            html: htmlAprovado,
+            text: `Olá ${nome}! Sua solicitação de acesso ao SIGE foi aprovada pelo gestor. Seu login: ${dados.email}.`
+          });
+        } catch (_) {}
+      }
     } else {
       console.log(`[Sucesso] ❌ Solicitação de ${nome} (${id}) REJEITADA.`);
       if (remetenteJid && sock) {
@@ -278,6 +304,30 @@ export async function processarDecisao({ solicitacaoId, whatsappMsgId, acao, rem
                              `Informamos que sua solicitação de acesso ao sistema SIGE foi analisada e *rejeitada* pela gestão.\n` +
                              `Em caso de dúvidas, procure o seu supervisor imediato.`;
         await enviarMensagemWhatsApp(dados.telefone, msgRejeitado);
+      }
+
+      // Envio análogo por E-mail ao funcionário rejeitado
+      if (dados.email) {
+        try {
+          const htmlRejeitado = gerarTemplateNotificacao({
+            titulo: 'Solicitação de Acesso Não Aprovada',
+            subtitulo: 'SIGE - Indústria & Manutenção',
+            corHeader: '#dc2626',
+            itens: [
+              { label: 'Colaborador', valor: nome },
+              { label: 'E-mail', valor: dados.email },
+              { label: 'Status', valor: '❌ Rejeitado' }
+            ],
+            rodape: 'Informamos que seu pedido de cadastro foi analisado e não foi aprovado pela gestão. Em caso de dúvidas, consulte o supervisor imediato.'
+          });
+
+          await enviarEmail({
+            to: dados.email,
+            subject: '❌ [SIGE] Solicitação de Acesso',
+            html: htmlRejeitado,
+            text: `Olá ${nome}. Sua solicitação de acesso ao SIGE foi rejeitada pela gestão.`
+          });
+        } catch (_) {}
       }
     }
   } catch (error) {

@@ -1,6 +1,7 @@
 // api/mensagens.js
 import { FieldValue } from 'firebase-admin/firestore';
 import dbPadrao from './firebase.js';
+import { enviarParaDestinatariosEmail, gerarTemplateNotificacao } from './email.js';
 
 // Trava em memória para evitar notificações repetidas em disparos paralelos (TTL de 15 segundos)
 const notificacoesRecentes = new Map();
@@ -72,13 +73,15 @@ export async function buscarUsuariosPorPerfis(db = dbPadrao, perfis = []) {
       const data = doc.data();
       const p = normalizarTexto(data.perfil);
       const tel = (data.telefone || '').toString().trim();
+      const email = (data.email || '').toString().trim();
 
-      if (tel && perfisNorm.some((perfil) => p.includes(perfil))) {
+      if (perfisNorm.some((perfil) => p.includes(perfil))) {
         resultados.push({
           id: doc.id,
           nome: data.nome || data.nomeFuncionario || 'Colaborador',
           perfil: p,
-          telefone: tel
+          telefone: tel,
+          email: email
         });
       }
     });
@@ -213,12 +216,37 @@ export async function notificarParadaMaquina({ db = dbPadrao, enviarMensagem, te
                    `🕒 *Horário:* ${horario}\n\n` +
                    `👉 Acesse o seu *Painel Técnico* no aplicativo SIGE para verificar a máquina e os procedimentos necessários.`;
 
-  // Destinatários: Chefe + Técnicos + Supervisores
-  const equipeAlerta = await buscarUsuariosPorPerfis(db, ['tecnico', 'supervisor']);
+  // Destinatários: Chefe + Técnicos + Supervisores + Gestores
+  const equipeAlerta = await buscarUsuariosPorPerfis(db, ['tecnico', 'supervisor', 'gestor']);
   const telefones = [telefoneChefe, ...equipeAlerta.map((u) => u.telefone)].filter(Boolean);
 
   console.log(`[WhatsApp] Notificando parada da máquina ${nome} (${tag}) - Motivo: "${motivo}" para ${telefones.length} destinatário(s)...`);
   await enviarParaDestinatarios(enviarMensagem, telefones, mensagem);
+
+  // Envio análogo por E-mail (Sistema Híbrido)
+  const emailChefe = (process.env.EMAIL_CHEFE || 'nathansoaresalves@outlook.com').trim();
+  const emails = [emailChefe, ...equipeAlerta.map((u) => u.email)].filter(Boolean);
+
+  const html = gerarTemplateNotificacao({
+    titulo: `🚨 ALERTA DE PARADA: ${tag}`,
+    subtitulo: `A máquina ${nome} parou no chão de fábrica`,
+    corHeader: '#dc2626',
+    itens: [
+      { label: 'Máquina', valor: `${nome} (${tag})` },
+      { label: 'Localização', valor: localizacao },
+      { label: 'Motivo', valor: motivo },
+      { label: 'Classificação', valor: ehCritica ? '🔴 Crítica (Aguardando Supervisor)' : '🟢 Normal' },
+      { label: 'Registrado por', valor: solicitante },
+      { label: 'Horário', valor: horario }
+    ],
+    rodape: '👉 Acesse o SIGE para assumir a manutenção ou atribuir um técnico.'
+  });
+
+  await enviarParaDestinatariosEmail(emails, {
+    subject: `🚨 [SIGE] Parada de Máquina: ${nome} (${tag})`,
+    html,
+    text: `A máquina ${nome} (${tag}) parou! Motivo: ${motivo}. Registrado por: ${solicitante}.`
+  });
 }
 
 /**
@@ -249,6 +277,29 @@ export async function notificarFaltaMaterial({ db = dbPadrao, enviarMensagem, te
 
   console.log(`[WhatsApp] Notificando necessidade de suprimentos para ${telefones.length} supervisor(es)...`);
   await enviarParaDestinatarios(enviarMensagem, telefones, mensagem);
+
+  // Envio análogo por E-mail (Sistema Híbrido)
+  const emailChefe = (process.env.EMAIL_CHEFE || 'nathansoaresalves@outlook.com').trim();
+  const emails = [emailChefe, ...supervisores.map((u) => u.email)].filter(Boolean);
+
+  const html = gerarTemplateNotificacao({
+    titulo: `📦 NECESSIDADE DE SUPRIMENTOS: ${tag}`,
+    subtitulo: `A máquina ${nome} precisa de peças/materiais para prosseguir`,
+    corHeader: '#d97706',
+    itens: [
+      { label: 'Máquina', valor: `${nome} (${tag})` },
+      { label: 'Localização', valor: localizacao },
+      { label: 'Técnico', valor: tecResponsavel },
+      { label: 'Material Solicitado', valor: motivoPausa }
+    ],
+    rodape: '👉 Acesse a aba <b>Suprir Materiais</b> no Painel do Supervisor no SIGE para realizar a entrega.'
+  });
+
+  await enviarParaDestinatariosEmail(emails, {
+    subject: `📦 [SIGE] Solicitação de Suprimentos: ${nome} (${tag})`,
+    html,
+    text: `A máquina ${nome} (${tag}) precisa de suprimentos: ${motivoPausa}. Técnico: ${tecResponsavel}.`
+  });
 }
 
 /**
@@ -265,10 +316,7 @@ export async function notificarDesignacaoTecnico({ db = dbPadrao, enviarMensagem
   if (jaFoiNotificadoRecentemente(chave)) return;
 
   const tecnico = await buscarUsuarioPorIdOuNome(db, { id: tecId, nome: tecNome });
-  if (!tecnico || !tecnico.telefone) {
-    console.log(`[WhatsApp] Técnico designado ${tecNome} não possui telefone cadastrado.`);
-    return;
-  }
+  if (!tecnico) return;
 
   const supNome = supervisorNome || ocorrencia?.supervisorResponsavel || 'o Supervisor';
   const nomeMaquina = maquina?.nome || ocorrencia?.equipamentoNome || 'Máquina';
@@ -283,8 +331,36 @@ export async function notificarDesignacaoTecnico({ db = dbPadrao, enviarMensagem
                    `⚠️ *Grau:* ${ehCritica ? 'Crítico (Exclusivo)' : 'Normal'}\n\n` +
                    `👉 Abra o aplicativo SIGE e acerte o atendimento no seu *Painel Técnico*.`;
 
-  console.log(`[WhatsApp] Notificando técnico ${tecnico.nome} (${tecnico.telefone}) sobre designação de serviço...`);
-  await enviarParaDestinatarios(enviarMensagem, [tecnico.telefone], mensagem);
+  if (tecnico.telefone) {
+    console.log(`[WhatsApp] Notificando técnico ${tecnico.nome} (${tecnico.telefone}) sobre designação de serviço...`);
+    await enviarParaDestinatarios(enviarMensagem, [tecnico.telefone], mensagem);
+  }
+
+  // Envio análogo por E-mail (Sistema Híbrido)
+  const emailDestinatarios = [];
+  if (tecnico.email) emailDestinatarios.push(tecnico.email);
+  const emailChefe = (process.env.EMAIL_CHEFE || 'nathansoaresalves@outlook.com').trim();
+  if (emailChefe) emailDestinatarios.push(emailChefe);
+
+  const html = gerarTemplateNotificacao({
+    titulo: `🔧 DESIGNAÇÃO DE MANUTENÇÃO: ${tagMaquina}`,
+    subtitulo: `Você foi designado pelo supervisor ${supNome}`,
+    corHeader: '#0284c7',
+    itens: [
+      { label: 'Técnico Designado', valor: tecnico.nome || tecNome },
+      { label: 'Máquina', valor: `${nomeMaquina} (${tagMaquina})` },
+      { label: 'Designado por', valor: supNome },
+      { label: 'Motivo / Ocorrência', valor: motivo },
+      { label: 'Grau de Prioridade', valor: ehCritica ? '🔴 Crítico' : '🟢 Normal' }
+    ],
+    rodape: '👉 Abra o aplicativo SIGE e inicie o atendimento através do seu <b>Painel Técnico</b>.'
+  });
+
+  await enviarParaDestinatariosEmail(emailDestinatarios, {
+    subject: `🔧 [SIGE] Designação de Manutenção: ${nomeMaquina} (${tagMaquina})`,
+    html,
+    text: `Olá ${tecnico.nome}! Você foi designado para a manutenção da máquina ${nomeMaquina} (${tagMaquina}). Motivo: ${motivo}.`
+  });
 }
 
 /**
@@ -380,6 +456,36 @@ export async function notificarReparoFinalizado({ db = dbPadrao, enviarMensagem,
 
   console.log(`[WhatsApp] Notificando finalização da manutenção ${tag} para ${telefones.length} destinatário(s)...`);
   await enviarParaDestinatarios(enviarMensagem, telefones, mensagem);
+
+  // Envio análogo por E-mail (Sistema Híbrido)
+  const emailChefe = (process.env.EMAIL_CHEFE || 'nathansoaresalves@outlook.com').trim();
+  const emails = [
+    emailChefe,
+    ...tecnicos.map((u) => u.email),
+    ...lideranca.map((u) => u.email)
+  ].filter(Boolean);
+
+  const html = gerarTemplateNotificacao({
+    titulo: `✅ MANUTENÇÃO FINALIZADA E LIBERADA: ${tag}`,
+    subtitulo: `A máquina ${nome} foi reparada e está operando normalmente`,
+    corHeader: '#16a34a',
+    itens: [
+      { label: 'Máquina', valor: `${nome} (${tag})` },
+      { label: 'Técnico Responsável', valor: tecFinalizou },
+      { label: 'Parecer Técnico', valor: parecerTecnico },
+      ...(pecasTexto ? [{ label: 'Peças Trocadas', valor: pecasTexto }] : []),
+      { label: 'Localização', valor: localizacao },
+      { label: 'Horário', valor: horario },
+      { label: 'Status Atual', valor: '🟢 Operando 100%' }
+    ],
+    rodape: '👉 O equipamento já se encontra apto para produção no chão de fábrica.'
+  });
+
+  await enviarParaDestinatariosEmail(emails, {
+    subject: `✅ [SIGE] Manutenção Concluída: ${nome} (${tag})`,
+    html,
+    text: `A máquina ${nome} (${tag}) foi liberada pelo técnico ${tecFinalizou}. Parecer: ${parecerTecnico}.`
+  });
 }
 
 /**
@@ -424,6 +530,42 @@ export async function notificarSolicitacaoUrgente({ db = dbPadrao, enviarMensage
 
   console.log(`[WhatsApp] Disparando alerta de urgência da máquina ${tag} para ${telefones.size} destinatário(s)...`);
   await enviarParaDestinatarios(enviarMensagem, Array.from(telefones), mensagem);
+
+  // Envio análogo por E-mail (Sistema Híbrido)
+  const emails = new Set();
+  const emailChefe = (process.env.EMAIL_CHEFE || 'nathansoaresalves@outlook.com').trim();
+  if (emailChefe) emails.add(emailChefe);
+
+  supervisores.forEach((s) => s.email && emails.add(s.email));
+
+  if (tecId || tecResponsavel) {
+    const tecUser = await buscarUsuarioPorIdOuNome(db, { id: tecId, nome: tecResponsavel });
+    if (tecUser && tecUser.email) emails.add(tecUser.email);
+  } else {
+    const tecnicos = await buscarUsuariosPorPerfis(db, ['tecnico']);
+    tecnicos.forEach((t) => t.email && emails.add(t.email));
+  }
+
+  const html = gerarTemplateNotificacao({
+    titulo: `🚨 SOLICITAÇÃO URGENTE DE ATENDIMENTO: ${tag}`,
+    subtitulo: `Chamado prioritário aberto pelo operador ${opNome}`,
+    corHeader: '#dc2626',
+    itens: [
+      { label: 'Máquina', valor: `${nome} (${tag})` },
+      { label: 'Localização', valor: localizacao },
+      { label: 'Motivo do Entrave', valor: motivo },
+      { label: 'Técnico Responsável', valor: tecResponsavel || 'Pendente de atendimento' },
+      { label: 'Solicitante', valor: opNome },
+      { label: 'Horário', valor: horario }
+    ],
+    rodape: '👉 Ação imediata necessária: verifique a ocorrência no aplicativo SIGE.'
+  });
+
+  await enviarParaDestinatariosEmail(Array.from(emails), {
+    subject: `🚨 [SIGE URGENTE] Atendimento Prioritário: ${nome} (${tag})`,
+    html,
+    text: `Atendimento urgente solicitado por ${opNome} para a máquina ${nome} (${tag})! Motivo: ${motivo}.`
+  });
 }
 
 /**
@@ -487,6 +629,41 @@ export async function verificarMaquinasParadas3Dias({ db = dbPadrao, enviarMensa
 
         console.log(`[WhatsApp] ⏰ Disparando alerta de 3 dias parado para máquina ${tag}...`);
         await enviarParaDestinatarios(enviarMensagem, Array.from(telefones), mensagem);
+
+        // Envio análogo por E-mail (Sistema Híbrido)
+        const emails = new Set();
+        const emailChefe = (process.env.EMAIL_CHEFE || 'nathansoaresalves@outlook.com').trim();
+        if (emailChefe) emails.add(emailChefe);
+
+        supervisores.forEach((s) => s.email && emails.add(s.email));
+        const gestores = await buscarUsuariosPorPerfis(db, ['gestor']);
+        gestores.forEach((g) => g.email && emails.add(g.email));
+
+        if (tecId || tec) {
+          const tecUser = await buscarUsuarioPorIdOuNome(db, { id: tecId, nome: tec });
+          if (tecUser && tecUser.email) emails.add(tecUser.email);
+        }
+
+        const html = gerarTemplateNotificacao({
+          titulo: `⏰ ALERTA CRÍTICO: MÁQUINA PARADA HÁ ${diffDias} DIAS`,
+          subtitulo: `A máquina ${nome} (${tag}) requer atenção imediata da gestão`,
+          corHeader: '#b91c1c',
+          itens: [
+            { label: 'Máquina', valor: `${nome} (${tag})` },
+            { label: 'Dias Parada', valor: `⚠️ ${diffDias} dias consecutivos` },
+            { label: 'Data de Abertura', valor: dataFormatada },
+            { label: 'Localização', valor: localizacao },
+            { label: 'Motivo Inicial', valor: motivo },
+            { label: 'Técnico Responsável', valor: tec }
+          ],
+          rodape: '👉 Cobrança de Resolução: intervenção necessária para restabelecer a operação fabril.'
+        });
+
+        await enviarParaDestinatariosEmail(Array.from(emails), {
+          subject: `⏰ [SIGE ALERTA CRÍTICO] Máquina Parada há ${diffDias} dias: ${nome} (${tag})`,
+          html,
+          text: `Atenção! A máquina ${nome} (${tag}) está parada há ${diffDias} dias. Motivo: ${motivo}.`
+        });
 
         await doc.ref.update({
           alerta3DiasEnviado: true,
