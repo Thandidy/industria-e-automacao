@@ -189,15 +189,13 @@ export function iniciarObservadorRecuperacoes() {
 // Inicializador principal — chamado pelo bot/start.js
 // ---------------------------------------------------------------------------
 export async function inicializarBot() {
-  // 1. Inicia WhatsApp + listeners Firestore (fila_envio, reiniciarSessao)
-  await iniciarWhatsApp();
+  // 1. Inicia os observadores do Firestore imediatamente (independente de WhatsApp estar pronto ou não)
+  iniciarObservadorSolicitacoes();
+  iniciarObservadorOcorrencias();
+  iniciarObservadorRecuperacoes();
 
-  // 2. Quando o socket conectar, inicia os observadores de negócio
-  onWhatsAppOpen(() => {
-    iniciarObservadorSolicitacoes();
-    iniciarObservadorOcorrencias();
-    iniciarObservadorRecuperacoes();
-  });
+  // 2. Inicia WhatsApp + listeners Firestore (fila_envio, reiniciarSessao)
+  await iniciarWhatsApp();
 }
 
 // ---------------------------------------------------------------------------

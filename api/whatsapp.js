@@ -414,12 +414,11 @@ export { conectarCliente as connectToWhatsApp };
 export function onWhatsAppOpen(cb) {
   if (connectionStatus === 'connected' && sock) {
     try { cb(sock); } catch (e) { console.error(e); }
-    return;
   }
+  
   const handler = async (update) => {
     if (update?.connection === 'open' && sock) {
       try { cb(sock); } catch (e) { console.error(e); }
-      sock.ev.off('connection.update', handler);
     }
   };
   sock?.ev?.on('connection.update', handler);
