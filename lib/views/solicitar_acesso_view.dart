@@ -413,11 +413,11 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.phone_android, color: Colors.green, size: 36),
+                  const Icon(Icons.mark_email_read, color: Colors.blueAccent, size: 36),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Uma mensagem com seu pedido foi enviada ao WhatsApp do gestor. Esta tela atualizará automaticamente assim que ele responder.',
+                      'Seu pedido foi enviado por WhatsApp e E-mail para a gestão. Assim que qualquer um dos dois for confirmado, esta tela liberará seu acesso automaticamente!',
                       style: theme.textTheme.bodyMedium,
                     ),
                   ),

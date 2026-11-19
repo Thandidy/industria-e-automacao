@@ -9,6 +9,7 @@ import {
 import { observarOcorrencias } from './mensagens.js';
 import { observarRecuperacoesSenha } from './recuperacao.js';
 import { enviarEmail, gerarTemplateNotificacao } from './email.js';
+import { enviarMensagemMeta } from './meta-whatsapp.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -55,32 +56,85 @@ export function iniciarObservadorSolicitacoes() {
 
           // Envio análogo por E-mail para o Chefe (EMAIL_CHEFE)
           const emailChefe = (process.env.EMAIL_CHEFE || 'nathansoaresalves@outlook.com').trim();
+          const baseUrlApp = process.env.VERCEL_PROJECT_PRODUCTION_URL
+            ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+            : (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://sige-industria-e-automacao.vercel.app');
+
+          const linkAprovar = `${baseUrlApp}/api/decidir?id=${id}&acao=aprovar`;
+          const linkRejeitar = `${baseUrlApp}/api/decidir?id=${id}&acao=rejeitar`;
+
           if (emailChefe) {
             try {
-              const htmlEmail = gerarTemplateNotificacao({
-                titulo: '🔔 Nova Solicitação de Acesso (SIGE)',
-                subtitulo: `Um novo funcionário solicitou cadastro no sistema`,
-                corHeader: '#0284c7',
-                itens: [
-                  { label: 'Nome', valor: dados.nome || dados.nomeFuncionario || 'Não informado' },
-                  { label: 'E-mail', valor: dados.email || 'Não informado' },
-                  { label: 'Telefone', valor: dados.telefone || 'Não informado' },
-                  { label: 'Perfil Solicitado', valor: (dados.perfil || 'operador').toUpperCase() },
-                  { label: 'ID do Cadastro', valor: `<code>${id}</code>` }
-                ],
-                rodape: '👉 Para aprovar ou rejeitar, responda via WhatsApp (reagindo com 👍/❌ à notificação) ou acerte pelo painel administrativo.'
-              });
+              const htmlEmail = `
+              <!DOCTYPE html>
+              <html>
+              <head><meta charset="utf-8"></head>
+              <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px;">
+                <div style="max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+                  <div style="background-color: #0284c7; padding: 24px 32px; text-align: center;">
+                    <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700;">🔔 Nova Solicitação de Acesso (SIGE)</h1>
+                    <p style="color: rgba(255, 255, 255, 0.9); margin: 6px 0 0 0; font-size: 13px;">Um novo colaborador solicitou cadastro no sistema</p>
+                  </div>
+                  <div style="padding: 28px 32px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                      <tr><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #475569; width: 35%;">Nome:</td><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${dados.nome || dados.nomeFuncionario || 'Não informado'}</td></tr>
+                      <tr><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #475569;">E-mail:</td><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${dados.email || 'Não informado'}</td></tr>
+                      <tr><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #475569;">Telefone:</td><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;">${dados.telefone || 'Não informado'}</td></tr>
+                      <tr><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #475569;">Perfil:</td><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; color: #1e293b;"><b>${(dados.perfil || 'operador').toUpperCase()}</b></td></tr>
+                      <tr><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #475569;">Protocolo:</td><td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; color: #64748b;"><code>${id}</code></td></tr>
+                    </table>
+
+                    <div style="margin-top: 28px; text-align: center;">
+                      <p style="font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 16px;">Clique em um dos botões abaixo para decidir o acesso:</p>
+                      <a href="${linkAprovar}" style="background-color: #16a34a; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; display: inline-block; margin-right: 12px; font-size: 14px;">✅ Aprovar Acesso</a>
+                      <a href="${linkRejeitar}" style="background-color: #dc2626; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; display: inline-block; font-size: 14px;">❌ Rejeitar</a>
+                    </div>
+                  </div>
+                  <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8;">
+                    SIGE - Sistema Integrado de Gestão de Equipamentos • Decisão Rápida 1-Click
+                  </div>
+                </div>
+              </body>
+              </html>
+              `;
 
               await enviarEmail({
                 to: emailChefe,
-                subject: `🔔 [SIGE] Novo Cadastro de Funcionário: ${dados.nome || dados.nomeFuncionario}`,
+                subject: `🔔 [SIGE] Novo Cadastro: ${dados.nome || dados.nomeFuncionario} (Aprovar / Rejeitar)`,
                 html: htmlEmail,
-                text: `Nova solicitação de cadastro no SIGE:\nNome: ${dados.nome || dados.nomeFuncionario}\nE-mail: ${dados.email}\nPerfil: ${dados.perfil || 'operador'}\nID: ${id}`
+                text: `Nova solicitação no SIGE:\nNome: ${dados.nome || dados.nomeFuncionario}\nE-mail: ${dados.email}\nPerfil: ${dados.perfil || 'operador'}\n\nAprovar: ${linkAprovar}\nRejeitar: ${linkRejeitar}`
               });
               console.log(`[Novo Cadastro E-mail] Notificação enviada para o chefe: ${emailChefe}`);
             } catch (errEmail) {
               console.error('[Novo Cadastro E-mail] Erro ao notificar chefe por e-mail:', errEmail?.message || errEmail);
             }
+          }
+
+          // Disparo via Meta Cloud API Oficial com Botões Interativos
+          try {
+            if (CHEFE_DIGITOS) {
+              const resMeta = await enviarMensagemMeta({
+                to: CHEFE_DIGITOS,
+                texto: `🔔 *Nova Solicitação de Acesso (SIGE)*\n\n` +
+                       `👤 *Nome:* ${dados.nome || dados.nomeFuncionario}\n` +
+                       `📧 *E-mail:* ${dados.email}\n` +
+                       `🏷️ *Perfil:* ${(dados.perfil || 'operador').toUpperCase()}\n` +
+                       `🆔 *ID:* \`${id}\``,
+                botoes: [
+                  { id: `aprovar_${id}`, title: '✅ Aprovar' },
+                  { id: `rejeitar_${id}`, title: '❌ Rejeitar' }
+                ]
+              });
+
+              if (resMeta?.sucesso) {
+                await db.collection('solicitacoes_login').doc(id).update({
+                  notificadoMeta: true,
+                  metaWamid: resMeta.messageId
+                });
+              }
+            }
+          } catch (eMeta) {
+            console.error('[Novo Cadastro Meta] Falha:', eMeta?.message || eMeta);
           }
 
           try {
