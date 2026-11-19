@@ -55,6 +55,15 @@ export function aprenderLidChefe(jid) {
     console.log(`👉 Para fixar no Vercel ou .env, adicione:`);
     console.log(`LID_CHEFE=${id}@lid`);
     console.log(`============================================================\n`);
+
+    // Sincroniza o LID descoberto no Firestore
+    try {
+      db.collection('sistema').doc('whatsapp').set({
+        lidChefeRecente: `${id}@lid`,
+        lidsConhecidos: Array.from(lidsChefeConhecidos),
+        ultimoLidDetectadoEm: FieldValue.serverTimestamp()
+      }, { merge: true }).catch(() => {});
+    } catch (_) {}
   }
 }
 
@@ -357,6 +366,16 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
         rawQRString = null;
 
         try {
+          await db.collection('sistema').doc('whatsapp').set({
+            status: 'disconnected',
+            conectado: false,
+            desconectadoEm: FieldValue.serverTimestamp(),
+            atualizadoEm: FieldValue.serverTimestamp(),
+            lastDisconnectReason
+          }, { merge: true });
+        } catch (_) {}
+
+        try {
           sock.ev.removeAllListeners();
           sock.end?.();
         } catch (_) {}
@@ -377,6 +396,18 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
         connectionStatus = 'connected';
         currentQRDataUrl = null;
         rawQRString = null;
+
+        // Atualiza status no Firestore para o app no Vercel saber que o bot local está online
+        try {
+          await db.collection('sistema').doc('whatsapp').set({
+            status: 'connected',
+            conectado: true,
+            conectadoEm: FieldValue.serverTimestamp(),
+            atualizadoEm: FieldValue.serverTimestamp(),
+            telefoneChefe: TELEFONE_CHEFE_CONFIG,
+            lidsConhecidos: Array.from(lidsChefeConhecidos)
+          }, { merge: true });
+        } catch (_) {}
 
         const callbacks = [...callbacksOnOpen];
         callbacksOnOpen = [];

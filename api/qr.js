@@ -6,9 +6,19 @@ import {
   obterDiretorioAuth
 } from './whatsapp.js';
 import { inicializarBot } from './index.js';
+import { db } from './firebase.js';
 import fs from 'fs';
 
 export default async function handler(req, res) {
+  // Consulta se o Bot Local já está conectado via Firestore
+  let botRemotoData = null;
+  try {
+    const waDoc = await db.collection('sistema').doc('whatsapp').get().catch(() => null);
+    if (waDoc && waDoc.exists) {
+      botRemotoData = waDoc.data();
+    }
+  } catch (_) {}
+
   // Ação especial: resetar sessão para gerar novo QR Code
   if (req.query.action === 'reset') {
     const authFolder = obterDiretorioAuth();
@@ -22,6 +32,12 @@ export default async function handler(req, res) {
         state.sock.end?.();
       } catch (_) {}
     }
+    try {
+      await db.collection('sistema').doc('whatsapp').set({
+        status: 'disconnected',
+        conectado: false
+      }, { merge: true });
+    } catch (_) {}
   }
 
   // Dispara inicialização do bot
@@ -34,14 +50,18 @@ export default async function handler(req, res) {
   const format = req.query.format || '';
   const acceptHeader = req.headers.accept || '';
 
+  const conectado = state.status === 'connected' || botRemotoData?.conectado === true;
+
   // 1. Resposta JSON (usado pelo aplicativo Flutter na Dashboard do Gestor)
   if (format === 'json' || acceptHeader.includes('application/json')) {
     return res.status(200).json({
-      status: state.status,
-      connected: state.status === 'connected',
+      status: conectado ? 'connected' : state.status,
+      connected: conectado,
       hasQR: state.hasQR,
       qrDataUrl: state.qrDataUrl,
       lastDisconnectReason: state.lastDisconnectReason,
+      modo: botRemotoData?.conectado ? 'local_pc' : 'serverless',
+      lidChefe: botRemotoData?.lidChefeRecente || null,
       timestamp: new Date().toISOString()
     });
   }

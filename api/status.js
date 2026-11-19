@@ -5,16 +5,20 @@ import { db } from './firebase.js';
 export default async function handler(req, res) {
   let firestoreOk = false;
   let firestoreError = null;
+  let botRemotoData = null;
 
   try {
-    // Teste leve no Firestore
-    const testDoc = await db.collection('sistema').doc('status').get().catch(() => null);
+    const waDoc = await db.collection('sistema').doc('whatsapp').get().catch(() => null);
+    if (waDoc && waDoc.exists) {
+      botRemotoData = waDoc.data();
+    }
     firestoreOk = true;
   } catch (err) {
     firestoreError = err.message;
   }
 
   const waState = getWhatsAppState();
+  const estaConectadoLocalOuRemoto = waState.status === 'connected' || botRemotoData?.conectado === true;
 
   const status = {
     sistema: 'SIGE - Indústria & Manutenção',
@@ -26,11 +30,13 @@ export default async function handler(req, res) {
         erro: firestoreError
       },
       whatsapp: {
-        status: waState.status,
-        conectado: waState.status === 'connected',
+        status: estaConectadoLocalOuRemoto ? 'connected' : waState.status,
+        conectado: estaConectadoLocalOuRemoto,
         aguardandoQR: waState.hasQR,
-        telefoneChefeConfigurado: !!waState.telefoneChefe,
-        lidChefeConfigurado: !!waState.lidChefe
+        telefoneChefeConfigurado: !!(waState.telefoneChefe || botRemotoData?.telefoneChefe),
+        lidChefeConfigurado: !!(waState.lidChefe || botRemotoData?.lidChefeRecente),
+        modoExecucao: botRemotoData?.conectado ? 'bot_local_ativo' : 'serverless',
+        ultimoLidDetectado: botRemotoData?.lidChefeRecente || null
       },
       email: {
         smtpHost: process.env.SMTP_HOST || 'não configurado',
