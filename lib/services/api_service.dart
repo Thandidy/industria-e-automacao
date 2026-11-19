@@ -45,7 +45,7 @@ class ApiService {
       final response = await http.get(
         url,
         headers: {'Accept': 'application/json'},
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -53,6 +53,21 @@ class ApiService {
       return {'connected': false, 'hasQR': false};
     } catch (e) {
       return {'connected': false, 'hasQR': false, 'erro': e.toString()};
+    }
+  }
+
+  /// Solicita reset ou desconexão da sessão do WhatsApp
+  static Future<bool> resetarSessaoWhatsApp() async {
+    try {
+      final url = Uri.parse('$baseUrl/api/qr?action=reset&format=json');
+      final response = await http.get(
+        url,
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
     }
   }
 

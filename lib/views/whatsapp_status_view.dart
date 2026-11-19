@@ -14,6 +14,7 @@ class WhatsAppStatusView extends StatefulWidget {
 class _WhatsAppStatusViewState extends State<WhatsAppStatusView> {
   bool _isLoading = true;
   bool _estaConectado = false;
+  bool _isResetting = false;
   String? _qrDataUrl;
   String _statusTexto = 'Verificando status...';
   Timer? _timerAtualizacao;
@@ -24,7 +25,7 @@ class _WhatsAppStatusViewState extends State<WhatsAppStatusView> {
     _carregarStatus();
     // Atualiza a cada 5 segundos enquanto a tela estiver aberta
     _timerAtualizacao = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted) _carregarStatus(silencioso: true);
+      if (mounted && !_isResetting) _carregarStatus(silencioso: true);
     });
   }
 
@@ -53,6 +54,45 @@ class _WhatsAppStatusViewState extends State<WhatsAppStatusView> {
           : (qr != null ? 'Aguardando leitura do QR Code' : 'Conectando socket ($status)...');
       _isLoading = false;
     });
+  }
+
+  Future<void> _desconectarWhatsApp() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Desconectar WhatsApp?'),
+        content: const Text(
+          'A sessão atual será encerrada e um novo QR Code será gerado para que você possa conectar outro aparelho.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Desconectar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true) return;
+
+    setState(() {
+      _isResetting = true;
+      _isLoading = true;
+      _statusTexto = 'Desconectando sessão e gerando novo QR Code...';
+    });
+
+    await ApiService.resetarSessaoWhatsApp();
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (mounted) {
+      _isResetting = false;
+      await _carregarStatus();
+    }
   }
 
   @override
@@ -162,6 +202,17 @@ class _WhatsAppStatusViewState extends State<WhatsAppStatusView> {
             const SizedBox(height: 24),
             Row(
               children: [
+                if (_estaConectado) ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
+                      onPressed: _desconectarWhatsApp,
+                      icon: const Icon(Icons.link_off, size: 18),
+                      label: const Text('Desconectar'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => _carregarStatus(),
@@ -169,7 +220,7 @@ class _WhatsAppStatusViewState extends State<WhatsAppStatusView> {
                     label: const Text('Atualizar'),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () => Navigator.of(context).pop(),

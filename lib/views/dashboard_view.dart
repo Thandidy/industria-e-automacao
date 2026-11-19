@@ -135,18 +135,16 @@ class _DashboardViewState extends State<DashboardView> {
             ),
           ),
 
-          // 4. Status do WhatsApp & Notificações (Supervisor e Gestor)
-          PermissionGuard(
-            permission: AppPermission.visualizarDashboardKpi,
-            child: IconButton(
+          // 4. Conexão do WhatsApp & Notificações (EXCLUSIVO do Perfil Gestor)
+          if (usuario.ehGestor)
+            IconButton(
               icon: const Icon(Icons.qr_code_2),
-              tooltip: 'Status WhatsApp & Notificações',
+              tooltip: 'Conexão WhatsApp & Notificações',
               onPressed: () => showDialog(
                 context: context,
                 builder: (_) => const WhatsAppStatusView(),
               ),
             ),
-          ),
         ],
       ),
       body: RefreshIndicator(
@@ -328,13 +326,23 @@ class _RoleHeaderBanner extends StatelessWidget {
         roleColor = const Color(0xFF10B981); // Esmeralda
         roleIcon = Icons.admin_panel_settings;
         roleTitle = 'Gestor Industrial Executivo';
-        roleDescription = 'Governança de ativos industriais: Gestão de máquinas e análise de relatórios & KPIs.';
+        roleDescription = 'Governança de ativos industriais: Gestão de máquinas, conexão WhatsApp e análise de relatórios & KPIs.';
         quickActions = [
           _QuickActionButton(
             label: 'Gerenciar Máquinas',
             icon: Icons.settings_suggest,
             color: roleColor,
             onTap: () => Navigator.of(context).pushNamed('/gerenciamento-maquinas'),
+          ),
+          const SizedBox(width: 8),
+          _QuickActionButton(
+            label: 'Conexão WhatsApp',
+            icon: Icons.qr_code_scanner,
+            color: const Color(0xFF25D366),
+            onTap: () => showDialog(
+              context: context,
+              builder: (_) => const WhatsAppStatusView(),
+            ),
           ),
           const SizedBox(width: 8),
           _QuickActionButton(
