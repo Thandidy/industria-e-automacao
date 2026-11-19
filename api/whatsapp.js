@@ -228,7 +228,12 @@ export async function conectarCliente() {
         }
 
         const telefoneChefeConfig = (process.env.TELEFONE_CHEFE || '').trim().replace(/\D/g, '');
-        const deChefe = de && telefoneChefeConfig && de.includes(telefoneChefeConfig);
+        const lidChefeConfig = (process.env.LID_CHEFE || '').trim();
+        const deChefe = de && (
+          (telefoneChefeConfig && de.includes(telefoneChefeConfig)) ||
+          (lidChefeConfig && de === lidChefeConfig) ||
+          de.includes('@lid') // aceita reações do próprio chat privado
+        );
         if (!deChefe) continue;
 
         // 2.A. Decisão por REAÇÃO direta na mensagem do bot
@@ -236,8 +241,8 @@ export async function conectarCliente() {
           const emoji = reacao.text.trim();
           const targetMsgId = reacao.key?.id;
 
-          const emojiAprova = ['👍', '✅', '👌', '👏', '🟢'].includes(emoji);
-          const emojiRejeita = ['👎', '❌', '🚫', '🛑', '🔴'].includes(emoji);
+          const emojiAprova = ['👍', '✅', '👌', '👏', '🟢'].some(e => emoji.includes(e));
+          const emojiRejeita = ['👎', '❌', '🚫', '🛑', '🔴'].some(e => emoji.includes(e));
 
           if (emojiAprova || emojiRejeita) {
             try {
@@ -283,7 +288,7 @@ export async function conectarCliente() {
                 const msgConfirmacao = emojiAprova
                   ? `✅ Solicitação autorizada via reação (${emoji})!`
                   : `❌ Solicitação recusada via reação (${emoji}) e removida.`;
-                await enviarMensagemWhatsApp(process.env.TELEFONE_CHEFE, msgConfirmacao);
+                await enviarMensagemWhatsApp(de, msgConfirmacao);
               }
             } catch (errReacao) {
               console.error('[WhatsApp Reação] Erro ao processar reação do chefe:', errReacao);
@@ -323,7 +328,7 @@ export async function conectarCliente() {
                 const msgConfirmacao = ehAprovacao
                   ? `✅ Cadastro de *${docSolicitacao.data().nome || 'Colaborador'}* foi *APROVADO* com sucesso!`
                   : `❌ Solicitação de *${docSolicitacao.data().nome || 'Colaborador'}* foi *REJEITADA* e removida.`;
-                await enviarMensagemWhatsApp(process.env.TELEFONE_CHEFE, msgConfirmacao);
+                await enviarMensagemWhatsApp(de, msgConfirmacao);
               }
             } catch (errDecisao) {
               console.error('[WhatsApp Decisão] Erro ao processar resposta do chefe:', errDecisao);
