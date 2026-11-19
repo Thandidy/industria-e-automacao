@@ -416,11 +416,12 @@ export async function connectToWhatsApp({ printTerminal = false, authFolder = nu
         rawQRString = null;
 
         try {
-          await db.collection('sistema').doc('whatsapp').set({
-            status: 'disconnected',
-            conectado: false,
-            desconectadoEm: FieldValue.serverTimestamp(),
-            atualizadoEm: FieldValue.serverTimestamp(),
+          await db.collection('config').doc('whatsapp').set({
+            status: 'desconectado',
+            qrCode: null,
+            qrDataUrl: null,
+            reiniciarSessao: false,
+            ultimaAtualizacao: FieldValue.serverTimestamp(),
             lastDisconnectReason
           }, { merge: true });
         } catch (_) {}

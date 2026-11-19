@@ -1,99 +1,9 @@
 // lib/views/whatsapp_status_view.dart
-import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class WhatsAppStatusView extends StatefulWidget {
+class WhatsAppStatusView extends StatelessWidget {
   const WhatsAppStatusView({super.key});
-
-  @override
-  State<WhatsAppStatusView> createState() => _WhatsAppStatusViewState();
-}
-
-class _WhatsAppStatusViewState extends State<WhatsAppStatusView> {
-  bool _isLoading = true;
-  bool _estaConectado = false;
-  bool _isResetting = false;
-  String? _qrDataUrl;
-  String _statusTexto = 'Verificando status...';
-  Timer? _timerAtualizacao;
-
-  @override
-  void initState() {
-    super.initState();
-    _carregarStatus();
-    // Atualiza a cada 5 segundos enquanto a tela estiver aberta
-    _timerAtualizacao = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted && !_isResetting) _carregarStatus(silencioso: true);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timerAtualizacao?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _carregarStatus({bool silencioso = false}) async {
-    if (!silencioso) setState(() => _isLoading = true);
-
-    final resultado = await ApiService.obterEstadoWhatsApp();
-
-    if (!mounted) return;
-
-    final conectado = resultado['connected'] == true || resultado['status'] == 'connected';
-    final qr = resultado['qrDataUrl'] as String?;
-    final status = (resultado['status'] ?? 'desconhecido').toString();
-
-    setState(() {
-      _estaConectado = conectado;
-      _qrDataUrl = qr;
-      _statusTexto = conectado
-          ? 'Conectado com sucesso ao WhatsApp'
-          : (qr != null ? 'Aguardando leitura do QR Code' : 'Conectando socket ($status)...');
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _desconectarWhatsApp() async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Desconectar WhatsApp?'),
-        content: const Text(
-          'A sessão atual será encerrada e um novo QR Code será gerado para que você possa conectar outro aparelho.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Desconectar', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmar != true) return;
-
-    setState(() {
-      _isResetting = true;
-      _isLoading = true;
-      _statusTexto = 'Desconectando sessão e gerando novo QR Code...';
-    });
-
-    await ApiService.resetarSessaoWhatsApp();
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (mounted) {
-      _isResetting = false;
-      await _carregarStatus();
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,134 +12,113 @@ class _WhatsAppStatusViewState extends State<WhatsAppStatusView> {
       child: Container(
         constraints: const BoxConstraints(maxWidth: 460),
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
+        child: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('config').doc('whatsapp').snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+            final status = data['status'] as String? ?? 'desconhecido';
+            final qrDataUrl = data['qrDataUrl'] as String?;
+            final conectado = status == 'conectado';
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _estaConectado ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    _estaConectado ? Icons.check_circle : Icons.qr_code_scanner,
-                    color: _estaConectado ? Colors.green : Colors.orange,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Status da Integração WhatsApp',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                )
-              ],
-            ),
-            const Divider(height: 24),
-            if (_isLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 40),
-                child: CircularProgressIndicator(),
-              )
-            else if (_estaConectado) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  border: Border.all(color: Colors.green.shade300),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
+                Row(
                   children: [
-                    Icon(Icons.verified, color: Colors.green, size: 28),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'WhatsApp conectado e operando!\nNotificações de máquinas e aprovações ativas.',
-                        style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: conectado ? Colors.green.withAlpha(25) : Colors.orange.withAlpha(25),
+                        borderRadius: BorderRadius.circular(8),
                       ),
+                      child: Icon(
+                        conectado ? Icons.check_circle : Icons.qr_code_scanner,
+                        color: conectado ? Colors.green : Colors.orange,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Status da Integração WhatsApp',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Todas as notificações de parada de máquina, falta de material, e solicitação de novos logins estão sendo direcionadas ao WhatsApp do Gestor.',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
-                textAlign: TextAlign.center,
-              ),
-            ] else if (_qrDataUrl != null) ...[
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: Image.memory(
-                  base64Decode(_qrDataUrl!.split(',')[1]),
-                  width: 240,
-                  height: 240,
-                  fit: BoxFit.contain,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Abra o WhatsApp > Aparelhos Conectados > Conectar um aparelho e aponte a câmera para o QR Code acima.',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
-                textAlign: TextAlign.center,
-              ),
-            ] else ...[
-              const Icon(Icons.sync, size: 48, color: Colors.blue),
-              const SizedBox(height: 12),
-              Text(
-                _statusTexto,
-                style: const TextStyle(fontWeight: FontWeight.w500),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Aguardando o servidor gerar o código de conexão...',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                if (_estaConectado) ...[
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
-                      onPressed: _desconectarWhatsApp,
-                      icon: const Icon(Icons.link_off, size: 18),
-                      label: const Text('Desconectar'),
+                const Divider(height: 24),
+                if (conectado) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withAlpha(25),
+                      border: Border.all(color: Colors.green.shade300),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.verified, color: Colors.green, size: 28),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'WhatsApp conectado e operando!\nNotificações de máquinas e aprovações ativas.',
+                            style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Todas as notificações de parada de máquina, falta de material, e solicitações de novos logins estão sendo direcionadas ao WhatsApp do Gestor.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ] else if (qrDataUrl != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Image.memory(
+                      // Decode base64 Data URL
+                      base64Decode(qrDataUrl.split(',').last),
+                      width: 240,
+                      height: 240,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Abra o WhatsApp → Aparelhos Conectados → Conectar um aparelho e aponte a câmera para o QR Code acima.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ] else ...[
+                  const Icon(Icons.sync, size: 48, color: Colors.blue),
+                  const SizedBox(height: 12),
+                  Text(
+                    status == 'aguardando_qr' ? 'Aguardando leitura do QR Code' : 'Conectando socket…',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Aguardando o servidor gerar o código de conexão...',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                 ],
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _carregarStatus(),
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('Atualizar'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Fechar'),
-                  ),
-                ),
               ],
-            )
-          ],
+            );
+          },
         ),
       ),
     );
