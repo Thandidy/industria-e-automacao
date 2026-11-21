@@ -1,6 +1,6 @@
 // lib/views/equipamento_detalhe_view.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import '../models/equipamento.dart';
 import '../models/ocorrencia.dart';
@@ -421,18 +421,24 @@ class _EquipamentoDetalheViewState extends State<EquipamentoDetalheView> {
                   child: Text('Nenhum técnico cadastrado encontrado.', style: TextStyle(color: Colors.red)),
                 )
               else
-                ...tecnicos.map((tec) => RadioListTile<String>(
-                      title: Text(tec['nome']!),
-                      subtitle: Text('ID: ${tec['id']}'),
-                      value: tec['id']!,
-                      groupValue: tecnicoIdSelecionado,
-                      onChanged: (v) {
-                        setDialogState(() {
-                          tecnicoIdSelecionado = v;
-                          tecnicoNomeSelecionado = tec['nome'];
-                        });
-                      },
-                    )),
+                RadioGroup<String>(
+                  groupValue: tecnicoIdSelecionado,
+                  onChanged: (v) {
+                    setDialogState(() {
+                      tecnicoIdSelecionado = v;
+                      final tec = tecnicos.firstWhere((t) => t['id'] == v, orElse: () => {});
+                      tecnicoNomeSelecionado = tec['nome'];
+                    });
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: tecnicos.map((tec) => RadioListTile<String>(
+                          title: Text(tec['nome']!),
+                          subtitle: Text('ID: ${tec['id']}'),
+                          value: tec['id']!,
+                        )).toList(),
+                  ),
+                ),
             ],
           ),
           actions: [
@@ -755,18 +761,24 @@ class _EquipamentoDetalheViewState extends State<EquipamentoDetalheView> {
               const SizedBox(height: 16),
               const Text('Selecione o técnico responsável:', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              ...tecnicos.map((tec) => RadioListTile<String>(
-                    title: Text(tec['nome']!),
-                    subtitle: Text('ID: ${tec['id']}'),
-                    value: tec['id']!,
-                    groupValue: tecnicoIdSelecionado,
-                    onChanged: (v) {
-                      setDialogState(() {
-                        tecnicoIdSelecionado = v;
-                        tecnicoNomeSelecionado = tec['nome'];
-                      });
-                    },
-                  )),
+              RadioGroup<String>(
+                groupValue: tecnicoIdSelecionado,
+                onChanged: (v) {
+                  setDialogState(() {
+                    tecnicoIdSelecionado = v;
+                    final tec = tecnicos.firstWhere((t) => t['id'] == v, orElse: () => {});
+                    tecnicoNomeSelecionado = tec['nome'];
+                  });
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: tecnicos.map((tec) => RadioListTile<String>(
+                        title: Text(tec['nome']!),
+                        subtitle: Text('ID: ${tec['id']}'),
+                        value: tec['id']!,
+                      )).toList(),
+                ),
+              ),
             ],
           ),
           actions: [

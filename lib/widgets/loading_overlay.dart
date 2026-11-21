@@ -1,6 +1,6 @@
 // lib/widgets/loading_overlay.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Overlay de carregamento (loading) que impede interação durante processos.
 class LoadingOverlay extends StatelessWidget {

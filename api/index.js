@@ -19,11 +19,12 @@ dotenv.config();
 const TELEFONE_CHEFE = (process.env.TELEFONE_CHEFE || '').trim().replace(/['"]/g, '');
 const EMAIL_CHEFE    = (process.env.EMAIL_CHEFE    || '').trim();
 
-const BASE_URL = process.env.VERCEL_PROJECT_PRODUCTION_URL
-  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-  : process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'https://sige-industria-e-automacao.vercel.app';
+export function obterBaseUrl() {
+  return globalThis.__CLOUDFLARE_URL__ || process.env.BASE_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` :
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+    'http://localhost:3000');
+}
 
 // ---------------------------------------------------------------------------
 // Flags de controle (evita múltiplos listeners)
@@ -73,8 +74,9 @@ export function iniciarObservadorSolicitacoes() {
 
           console.log(`[Novo Cadastro] Solicitação recebida – ID: ${id} | Nome: ${nome}`);
 
-          const linkAprovar  = `${BASE_URL}/api/decidir?id=${id}&acao=aprovar`;
-          const linkRejeitar = `${BASE_URL}/api/decidir?id=${id}&acao=rejeitar`;
+          const baseUrl = obterBaseUrl();
+          const linkAprovar  = `${baseUrl}/api/decidir?id=${id}&acao=aprovar`;
+          const linkRejeitar = `${baseUrl}/api/decidir?id=${id}&acao=rejeitar`;
 
           // ── 1. Notifica por WhatsApp ──────────────────────────────────────
           const msgWa =

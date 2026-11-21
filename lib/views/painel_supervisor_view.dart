@@ -1,6 +1,6 @@
 // lib/views/painel_supervisor_view.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import '../models/ocorrencia.dart';
 import '../providers/auth_provider.dart';
@@ -22,7 +22,7 @@ class PainelSupervisorView extends StatefulWidget {
 class _PainelSupervisorViewState extends State<PainelSupervisorView> {
   bool _isLoading = false;
 
-  Future<void> _abrirModalAprovarEDesignar(BuildContext context, Ocorrencia ocorrencia) async {
+  Future<void> _abrirModalAprovarEDesignar(Ocorrencia ocorrencia) async {
     final provider = context.read<OcorrenciaProvider>();
     final tecnicos = provider.tecnicosDisponiveis;
     String? tecnicoIdSelecionado = ocorrencia.tecnicoDesignadoId;
@@ -86,18 +86,24 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
                     child: Text('Nenhum técnico cadastrado na coleção de usuários.', style: TextStyle(color: Colors.grey)),
                   )
                 else
-                  ...tecnicos.map((tec) => RadioListTile<String>(
-                        title: Text(tec['nome']!, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text('ID: ${tec['id']}'),
-                        value: tec['id']!,
-                        groupValue: tecnicoIdSelecionado,
-                        onChanged: (v) {
-                          setDialogState(() {
-                            tecnicoIdSelecionado = v;
-                            tecnicoNomeSelecionado = tec['nome'];
-                          });
-                        },
-                      )),
+                  RadioGroup<String>(
+                    groupValue: tecnicoIdSelecionado,
+                    onChanged: (v) {
+                      setDialogState(() {
+                        tecnicoIdSelecionado = v;
+                        final tec = tecnicos.firstWhere((t) => t['id'] == v, orElse: () => {});
+                        tecnicoNomeSelecionado = tec['nome'];
+                      });
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: tecnicos.map((tec) => RadioListTile<String>(
+                            title: Text(tec['nome']!, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: Text('ID: ${tec['id']}'),
+                            value: tec['id']!,
+                          )).toList(),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -152,7 +158,7 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
     }
   }
 
-  Future<void> _abrirModalEntregarMaterial(BuildContext context, Ocorrencia ocorrencia) async {
+  Future<void> _abrirModalEntregarMaterial(Ocorrencia ocorrencia) async {
     final formKey = GlobalKey<FormState>();
     final descricaoController = TextEditingController();
 
@@ -440,7 +446,7 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
                         precisaAprovacao ? 'Aprovar & Designar' : 'Reatribuir Técnico',
                         style: const TextStyle(color: Colors.white, fontSize: 13),
                       ),
-                      onPressed: () => _abrirModalAprovarEDesignar(context, oc),
+                      onPressed: () => _abrirModalAprovarEDesignar(oc),
                     ),
                   ],
                 ),
@@ -535,7 +541,7 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
                     icon: const Icon(Icons.local_shipping, size: 16, color: Colors.white),
                     label: const Text('Entregar Material', style: TextStyle(color: Colors.white)),
-                    onPressed: () => _abrirModalEntregarMaterial(context, oc),
+                    onPressed: () => _abrirModalEntregarMaterial(oc),
                   ),
                 ),
               ],

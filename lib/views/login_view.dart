@@ -1,6 +1,6 @@
 // lib/views/login_view.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/snackbar_helper.dart';

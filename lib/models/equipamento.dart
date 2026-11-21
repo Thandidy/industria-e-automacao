@@ -1,6 +1,6 @@
 // lib/models/equipamento.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 import '../models/usuario.dart';
 import '../utils/constants.dart';

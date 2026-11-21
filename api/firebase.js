@@ -29,7 +29,11 @@ export function getFirebaseAdmin() {
   // 1. Prioridade: Variável de ambiente (ideal para deploy público no Vercel)
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     try {
-      const rawEnv = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+      let rawEnv = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+      // Remove aspas simples ou duplas envolventes se a Vercel/env tiver adicionado
+      if ((rawEnv.startsWith('"') && rawEnv.endsWith('"')) || (rawEnv.startsWith("'") && rawEnv.endsWith("'"))) {
+        rawEnv = rawEnv.slice(1, -1).trim();
+      }
       if (rawEnv.startsWith('{')) {
         serviceAccount = JSON.parse(rawEnv);
       } else {

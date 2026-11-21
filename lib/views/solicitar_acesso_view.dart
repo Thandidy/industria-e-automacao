@@ -1,6 +1,6 @@
 // lib/views/solicitar_acesso_view.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/constants.dart';
 import '../widgets/snackbar_helper.dart';
@@ -355,44 +355,30 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        // Se o documento não existe ou foi excluído
+        // Se o documento não existe mais ou foi excluído
         if (!snapshot.hasData || !snapshot.data!.exists) {
-          return _buildRejeitado(theme);
+          // Verifica se o usuário já foi migrado com sucesso para a coleção 'usuarios'
+          return FutureBuilder<DocumentSnapshot>(
+            future: FirebaseFirestore.instance.collection('usuarios').doc(_solicitacaoId).get(),
+            builder: (ctx, userSnap) {
+              if (userSnap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (userSnap.hasData && userSnap.data!.exists) {
+                return _buildAprovadoSucesso(theme);
+              }
+              return _buildRejeitado(theme);
+            },
+          );
         }
 
         final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
         final status = (data['status'] ?? 'pendente').toString().toLowerCase();
 
-        // 1. Status Aprovado
+        // 1. Status Aprovado: copia para 'usuarios' e remove de 'solicitacoes_login'
         if (status == 'aprovado' || status == 'aprovada') {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.check_circle_outline, size: 80, color: Colors.green),
-              const SizedBox(height: 16),
-              Text(
-                'Cadastro Aprovado!',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'O gestor autorizou sua solicitação pelo WhatsApp. Seus dados foram salvos com sucesso e seu acesso está liberado!',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.login),
-                label: const Text('Ir para o Login'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                ),
-              ),
-            ],
-          );
+          _migrarParaUsuariosSeNecessario(_solicitacaoId!, data);
+          return _buildAprovadoSucesso(theme);
         } else if (status == 'rejeitado' || status == 'rejeitada' || status == 'negada') {
           return _buildRejeitado(theme);
         }
@@ -446,6 +432,61 @@ class _SolicitarAcessoViewState extends State<SolicitarAcessoView> {
           ],
         );
       },
+    );
+  }
+
+  // Copia o documento para a coleção 'usuarios' e exclui de 'solicitacoes_login'
+  void _migrarParaUsuariosSeNecessario(String docId, Map<String, dynamic> dados) async {
+    try {
+      final userDocRef = FirebaseFirestore.instance.collection('usuarios').doc(docId);
+      final jaExiste = (await userDocRef.get()).exists;
+      if (!jaExiste) {
+        await userDocRef.set({
+          'nome': dados['nome'] ?? dados['nomeFuncionario'] ?? 'Colaborador',
+          'email': dados['email'] ?? '',
+          'telefone': dados['telefone'] ?? '',
+          'perfil': dados['perfil'] ?? 'operador',
+          'senha': dados['senha'] ?? '',
+          'status': 'aprovado',
+          'criadoEm': dados['criadoEm'] ?? FieldValue.serverTimestamp(),
+          'ultimoLogin': FieldValue.serverTimestamp(),
+        });
+      }
+      // Exclui da coleção solicitacoes_login
+      await FirebaseFirestore.instance.collection('solicitacoes_login').doc(docId).delete();
+    } catch (e) {
+      debugPrint('[SolicitarAcesso] Erro ao sincronizar/migrar para usuarios: $e');
+    }
+  }
+
+  Widget _buildAprovadoSucesso(ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.check_circle_outline, size: 80, color: Colors.green),
+        const SizedBox(height: 16),
+        Text(
+          'Cadastro Aprovado!',
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: Colors.green,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'O gestor autorizou sua solicitação. Seus dados foram salvos com sucesso e seu acesso está 100% liberado!',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton.icon(
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.login),
+          label: const Text('Ir para o Login'),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          ),
+        ),
+      ],
     );
   }
 }

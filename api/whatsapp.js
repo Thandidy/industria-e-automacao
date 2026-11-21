@@ -19,6 +19,25 @@ import { enviarEmail, gerarTemplateNotificacao } from './email.js';
 
 dotenv.config();
 
+// Silencia logs internos do libsignal se ainda não interceptados
+const silenciarPadroes = (texto) => {
+  if (typeof texto !== 'string') return false;
+  return (
+    texto.includes('Bad MAC') ||
+    texto.includes('Failed to decrypt') ||
+    texto.includes('Session error') ||
+    texto.includes('SessionCipher') ||
+    texto.includes('Closing session') ||
+    texto.includes('SessionEntry')
+  );
+};
+const originalConsoleInfo = console.info.bind(console);
+console.info = (...args) => {
+  const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+  if (silenciarPadroes(msg)) return;
+  originalConsoleInfo(...args);
+};
+
 // ---------------------------------------------------------------------------
 // Firestore – referências
 // ---------------------------------------------------------------------------
@@ -143,6 +162,9 @@ export async function conectarCliente() {
       logger: pino({ level: 'silent' }),
       browser: Browsers.windows('Desktop'),
       syncFullHistory: false,
+      markOnlineOnConnect: false,
+      shouldIgnoreJid: (jid) => jid?.endsWith('@broadcast') || jid?.endsWith('@newsletter'),
+      getMessage: async () => undefined,
       defaultQueryTimeoutMs: 60_000,
       keepAliveIntervalMs: 25_000,
       connectTimeoutMs: 60_000,
@@ -216,17 +238,6 @@ export async function conectarCliente() {
         // Trata reação recebida (ex: 👍, ✅, 👎, ❌)
         const reacao = m.message?.reactionMessage;
 
-        // 1. Salva na coleção 'mensagens' (espelho Firestore)
-        try {
-          await db.collection('mensagens').add({
-            de,
-            texto: texto || (reacao ? `[Reação: ${reacao.text}]` : '[mídia ou não-texto]'),
-            timestamp: FieldValue.serverTimestamp(),
-          });
-        } catch (e) {
-          console.error('[Firestore] Erro ao salvar mensagem:', e.message);
-        }
-
         const telefoneChefeConfig = (process.env.TELEFONE_CHEFE || '').trim().replace(/\D/g, '');
         const lidChefeConfig = (process.env.LID_CHEFE || '').trim();
         const deChefe = de && (
@@ -263,13 +274,14 @@ export async function conectarCliente() {
 
               // Se não encontrou pelo ID específico, pega a pendente mais recente
               if (!idSolicitacao) {
-                const snapRecente = await db.collection('solicitacoes_login')
+                const snapPendente = await db.collection('solicitacoes_login')
                   .where('status', 'in', ['pendente', 'aguardando'])
-                  .orderBy('criadoEm', 'desc')
-                  .limit(1)
                   .get();
-                if (!snapRecente.empty) {
-                  idSolicitacao = snapRecente.docs[0].id;
+                if (!snapPendente.empty) {
+                  const sorted = snapPendente.docs.sort(
+                    (a, b) => ((b.data().criadoEm?.toMillis?.() || 0) - (a.data().criadoEm?.toMillis?.() || 0))
+                  );
+                  idSolicitacao = sorted[0].id;
                 }
               }
 
@@ -306,12 +318,13 @@ export async function conectarCliente() {
             try {
               const snap = await db.collection('solicitacoes_login')
                 .where('status', 'in', ['pendente', 'aguardando'])
-                .orderBy('criadoEm', 'desc')
-                .limit(1)
                 .get();
 
               if (!snap.empty) {
-                const docSolicitacao = snap.docs[0];
+                const sorted = snap.docs.sort(
+                  (a, b) => ((b.data().criadoEm?.toMillis?.() || 0) - (a.data().criadoEm?.toMillis?.() || 0))
+                );
+                const docSolicitacao = sorted[0];
                 const idSolicitacao = docSolicitacao.id;
                 const acao = ehAprovacao ? 'aprovar' : 'rejeitar';
 
@@ -329,6 +342,8 @@ export async function conectarCliente() {
                   ? `✅ Cadastro de *${docSolicitacao.data().nome || 'Colaborador'}* foi *APROVADO* com sucesso!`
                   : `❌ Solicitação de *${docSolicitacao.data().nome || 'Colaborador'}* foi *REJEITADA* e removida.`;
                 await enviarMensagemWhatsApp(de, msgConfirmacao);
+              } else {
+                await enviarMensagemWhatsApp(de, 'ℹ️ Nenhuma solicitação de acesso pendente no momento.');
               }
             } catch (errDecisao) {
               console.error('[WhatsApp Decisão] Erro ao processar resposta do chefe:', errDecisao);

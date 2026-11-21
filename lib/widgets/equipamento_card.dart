@@ -1,6 +1,6 @@
 // lib/widgets/equipamento_card.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'status_badge.dart';
 import '../models/equipamento.dart';
 import '../utils/constants.dart';

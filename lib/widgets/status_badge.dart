@@ -1,6 +1,6 @@
 // lib/widgets/status_badge.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../utils/constants.dart';
 import '../models/equipamento.dart';
 
@@ -60,7 +60,10 @@ class StatusBadge extends StatelessWidget {
   }
 
   static Color _calculaCorTexto(Color cor) {
-    final lum = (0.299 * cor.red + 0.587 * cor.green + 0.114 * cor.blue) / 255;
+    final lum = (0.299 * (cor.r * 255.0).round().clamp(0, 255) +
+            0.587 * (cor.g * 255.0).round().clamp(0, 255) +
+            0.114 * (cor.b * 255.0).round().clamp(0, 255)) /
+        255;
     return lum > 0.6 ? Colors.black87 : Colors.white;
   }
 }

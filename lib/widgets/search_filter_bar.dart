@@ -1,6 +1,6 @@
 // lib/widgets/search_filter_bar.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Barra de busca e filtros para listagens de equipamentos.
 class SearchFilterBar extends StatelessWidget {

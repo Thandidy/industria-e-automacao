@@ -1,6 +1,6 @@
 // lib/widgets/snackbar_helper.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Helper para exibir Toasts / SnackBars modernos no TOPO DA TELA com alta legibilidade e contraste.
 class SnackbarHelper {

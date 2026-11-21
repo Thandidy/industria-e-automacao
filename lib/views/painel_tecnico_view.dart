@@ -1,6 +1,6 @@
 // lib/views/painel_tecnico_view.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import '../models/ocorrencia.dart';
 import '../models/usuario.dart';

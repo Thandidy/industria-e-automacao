@@ -1,6 +1,6 @@
 // lib/models/ocorrencia.dart
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:uuid/uuid.dart';
 import '../models/historico.dart';
 import '../models/usuario.dart';

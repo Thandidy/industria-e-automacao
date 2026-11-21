@@ -2,7 +2,7 @@
 
 import 'dart:async';
 import 'dart:math';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/constants.dart';
@@ -44,12 +44,9 @@ class _RecuperarSenhaViewState extends State<RecuperarSenhaView> {
   // Dados do processo em andamento
   String? _usuarioId;
   String? _usuarioNome;
-  String? _usuarioEmail;
-  String? _usuarioTelefone;
   String? _recuperacaoDocId;
   String _canalUtilizado = 'whatsapp'; // 'whatsapp' | 'email'
   String _destinatarioFormatado = '';
-  DateTime? _expiraEm;
 
   // Temporizadores
   Timer? _timerExpira;
@@ -273,12 +270,9 @@ class _RecuperarSenhaViewState extends State<RecuperarSenhaView> {
       setState(() {
         _usuarioId = userId;
         _usuarioNome = nome;
-        _usuarioEmail = email;
-        _usuarioTelefone = tel;
         _recuperacaoDocId = docCriado.id;
         _canalUtilizado = ehEmail ? 'email' : 'whatsapp';
         _destinatarioFormatado = ehEmail ? _mascararEmail(email) : _mascararTelefone(tel.toString());
-        _expiraEm = expiraEm;
         _etapaAtual = EtapaRecuperacao.codigo;
       });
 
