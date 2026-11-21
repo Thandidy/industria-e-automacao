@@ -51,16 +51,16 @@ console.log('====================================================');
 console.log('Iniciando conexão Baileys e ouvintes do Firestore...\n');
 
 import http from 'http';
-import url from 'url';
 import handlerDecidir from '../api/decidir.js';
 
 // Servidor HTTP local para processar decisões dos links de e-mail e web sem depender da Vercel
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(async (req, res) => {
-  const parsedUrl = url.parse(req.url, true);
-  if (parsedUrl.pathname === '/api/decidir') {
+  const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (reqUrl.pathname === '/api/decidir') {
+    const query = Object.fromEntries(reqUrl.searchParams.entries());
     const mockReq = {
-      query: parsedUrl.query,
+      query,
       body: {},
       method: req.method,
       headers: req.headers,

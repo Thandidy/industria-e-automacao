@@ -101,15 +101,16 @@ export default async function handler(req, res) {
         }
       }
 
-      // Notifica o funcionário por E-mail
-      if (dados.email) {
+      // Notifica o funcionário por E-mail (se e-mail for válido)
+      const emailFuncionario = (dados.email || '').trim();
+      if (emailFuncionario && emailFuncionario.includes('@')) {
         const htmlAprovado = gerarTemplateNotificacao({
           titulo: '🎉 Seu Acesso foi Aprovado!',
           subtitulo: 'Bem-vindo ao SIGE - Indústria & Manutenção',
           corHeader: '#16a34a',
           itens: [
             { label: 'Colaborador', valor: nome },
-            { label: 'Login / E-mail', valor: dados.email },
+            { label: 'Login / E-mail', valor: emailFuncionario },
             { label: 'Perfil Concedido', valor: (dados.perfil || 'operador').toUpperCase() },
             { label: 'Status', valor: '🟢 Ativo e Liberado' }
           ],
@@ -117,10 +118,10 @@ export default async function handler(req, res) {
         });
 
         enviarEmail({
-          to: dados.email,
+          to: emailFuncionario,
           subject: '🎉 [SIGE] Seu cadastro foi aprovado com sucesso!',
           html: htmlAprovado,
-          text: `Olá ${nome}! Sua solicitação de acesso ao SIGE foi aprovada pelo gestor. Seu login: ${dados.email}.`
+          text: `Olá ${nome}! Sua solicitação de acesso ao SIGE foi aprovada pelo gestor. Seu login: ${emailFuncionario}.`
         }).catch(() => {});
       }
 

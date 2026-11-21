@@ -202,8 +202,26 @@ export async function notificarParadaMaquina({ db = dbPadrao, enviarMensagem, te
   const nome = maquina?.nome || ocorrencia?.equipamentoNome || 'Máquina';
   const tag = maquina?.tag || ocorrencia?.equipamentoTag || maquina?.codigo || 'N/A';
   const localizacao = maquina?.localizacao || 'Chão de Fábrica';
+  
+  // Extrai a prioridade real da ocorrência (ex: "Crítica", "Alta", "Média", "Baixa")
+  const prioridadeNome = ocorrencia?.prioridade || maquina?.prioridade || (ocorrencia?.grauCritico || maquina?.grauCritico ? 'Crítica' : 'Normal');
+  const pLower = String(prioridadeNome).toLowerCase().trim();
   const ehCritica = ocorrencia?.grauCritico === true || maquina?.grauCritico === true ||
-                    String(ocorrencia?.prioridade || '').toLowerCase().includes('crit');
+                    pLower.includes('crit');
+
+  let badgeClassificacao = '';
+  if (ehCritica) {
+    badgeClassificacao = '🔴 Crítica (Exige aprovação do Supervisor)';
+  } else if (pLower.includes('alta') || pLower === 'alto') {
+    badgeClassificacao = '🟠 Alta';
+  } else if (pLower.includes('med') || pLower.includes('méd')) {
+    badgeClassificacao = '🟡 Média';
+  } else if (pLower.includes('baix')) {
+    badgeClassificacao = '🟢 Baixa';
+  } else {
+    badgeClassificacao = `🟢 ${prioridadeNome}`;
+  }
+
   const motivo = ocorrencia?.motivo || ocorrencia?.descricao || maquina?.motivoParada || 'Parada operacional registrada';
   const solicitante = ocorrencia?.solicitante || 'Operador de Produção';
   const horario = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -211,7 +229,7 @@ export async function notificarParadaMaquina({ db = dbPadrao, enviarMensagem, te
   const mensagem = `🚨 *ALERTA DE PARADA: MÁQUINA ${tag}*\n\n` +
                    `A máquina *${nome}* (TAG: *${tag}*) localizada em *${localizacao}* acabou de PARAR!\n\n` +
                    `📌 *Motivo da Parada:* ${motivo}\n` +
-                   `⚠️ *Classificação:* ${ehCritica ? '🔴 CRÍTICA (Exige aprovação do Supervisor)' : '🟢 Normal (Liberada para início imediato)'}\n` +
+                   `⚠️ *Classificação:* ${badgeClassificacao}\n` +
                    `👤 *Registrado por:* ${solicitante}\n` +
                    `🕒 *Horário:* ${horario}\n\n` +
                    `👉 Acesse o seu *Painel Técnico* no aplicativo SIGE para verificar a máquina e os procedimentos necessários.`;
@@ -220,7 +238,7 @@ export async function notificarParadaMaquina({ db = dbPadrao, enviarMensagem, te
   const equipeAlerta = await buscarUsuariosPorPerfis(db, ['tecnico', 'supervisor', 'gestor']);
   const telefones = [telefoneChefe, ...equipeAlerta.map((u) => u.telefone)].filter(Boolean);
 
-  console.log(`[WhatsApp] Notificando parada da máquina ${nome} (${tag}) - Motivo: "${motivo}" para ${telefones.length} destinatário(s)...`);
+  console.log(`[WhatsApp] Notificando parada da máquina ${nome} (${tag}) - Prioridade: "${prioridadeNome}" - Motivo: "${motivo}" para ${telefones.length} destinatário(s)...`);
   await enviarParaDestinatarios(enviarMensagem, telefones, mensagem);
 
   // Envio análogo por E-mail (Sistema Híbrido)
@@ -235,7 +253,7 @@ export async function notificarParadaMaquina({ db = dbPadrao, enviarMensagem, te
       { label: 'Máquina', valor: `${nome} (${tag})` },
       { label: 'Localização', valor: localizacao },
       { label: 'Motivo', valor: motivo },
-      { label: 'Classificação', valor: ehCritica ? '🔴 Crítica (Aguardando Supervisor)' : '🟢 Normal' },
+      { label: 'Classificação', valor: badgeClassificacao },
       { label: 'Registrado por', valor: solicitante },
       { label: 'Horário', valor: horario }
     ],
@@ -261,8 +279,8 @@ export async function notificarFaltaMaterial({ db = dbPadrao, enviarMensagem, te
   const nome = maquina?.nome || ocorrencia?.equipamentoNome || 'Máquina';
   const tag = maquina?.tag || ocorrencia?.equipamentoTag || 'N/A';
   const localizacao = maquina?.localizacao || 'Parque Industrial';
-  const tecResponsavel = ocorrencia?.tecnicoResponsavel || maquina?.tecnicoDesignado || 'Técnico';
-  const motivoPausa = ocorrencia?.motivoPausa || ocorrencia?.descricao || 'Aguardando peças/materiais';
+  const tecResponsavel = ocorrencia?.tecnicoDesignado || ocorrencia?.tecnicoResponsavel || maquina?.tecnicoDesignado || 'Técnico';
+  const motivoPausa = ocorrencia?.motivoPausaMaterial || ocorrencia?.motivoPausa || maquina?.motivoPausaMaterial || ocorrencia?.descricao || maquina?.motivoPausa || 'Aguardando peças/materiais';
 
   const mensagem = `📦 *SOLICITAÇÃO DE SUPRIMENTOS (SIGE)*\n\n` +
                    `A máquina *${nome}* (${tag}) necessita de suprimentos para prosseguir!\n` +
@@ -716,7 +734,13 @@ export function observarOcorrencias({
         const id = change.doc.id;
         const dados = change.doc.data();
         const ocorrencia = { _id: id, id, ...dados };
-        const maquina = await buscarMaquina(db, { id: dados.equipamentoId, tag: dados.equipamentoTag });
+        let maquina = await buscarMaquina(db, { id: dados.equipamentoId, tag: dados.equipamentoTag });
+        if (dados.prioridade && maquina) {
+          maquina.prioridade = dados.prioridade;
+        }
+        if (dados.grauCritico !== undefined && maquina) {
+          maquina.grauCritico = dados.grauCritico;
+        }
 
         if (change.type === 'added') {
           ocorrenciasAnteriores.set(id, dados);
@@ -806,11 +830,50 @@ export function observarOcorrencias({
 
           if ((statusAtual === 'parada' || statusAtual === 'aguardandoaprovacao') &&
               (statusAnt !== 'parada' && statusAnt !== 'aguardandoaprovacao')) {
-            await notificarParadaMaquina({ ...opcoes, maquina, ocorrencia: null });
+            // Busca a ocorrência ativa para obter a prioridade real sem exigir índice composto
+            let ocorrenciaMaquina = null;
+            try {
+              const ocSnap = await db.collection(nomeColecaoOcorrencias)
+                .where('equipamentoId', '==', id)
+                .get();
+              if (!ocSnap.empty) {
+                const ocorrenciasDocs = ocSnap.docs.map(d => ({ _id: d.id, id: d.id, ...d.data() }));
+                // Encontra a ocorrência ativa não finalizada
+                ocorrenciaMaquina = ocorrenciasDocs.find(o => {
+                  const st = String(o.status ?? '').toLowerCase();
+                  return st !== 'finalizada' && st !== '3';
+                }) || ocorrenciasDocs[ocorrenciasDocs.length - 1];
+
+                if (ocorrenciaMaquina?.prioridade) maquina.prioridade = ocorrenciaMaquina.prioridade;
+                if (ocorrenciaMaquina?.grauCritico !== undefined) maquina.grauCritico = ocorrenciaMaquina.grauCritico;
+              }
+            } catch (err) {
+              console.warn('[mensagens.js] Aviso ao buscar ocorrencia vinculada:', err.message);
+            }
+            await notificarParadaMaquina({ ...opcoes, maquina, ocorrencia: ocorrenciaMaquina });
           }
 
           if (statusAtual === 'aguardandomaterial' && statusAnt !== 'aguardandomaterial') {
-            await notificarFaltaMaterial({ ...opcoes, maquina, ocorrencia: null });
+            // Busca a ocorrência ativa para obter motivoPausaMaterial digitado pelo técnico
+            let ocorrenciaMaterial = null;
+            try {
+              const ocSnapM = await db.collection(nomeColecaoOcorrencias)
+                .where('equipamentoId', '==', id)
+                .get();
+              if (!ocSnapM.empty) {
+                const ocDocs = ocSnapM.docs.map(d => ({ _id: d.id, id: d.id, ...d.data() }));
+                ocorrenciaMaterial = ocDocs.find(o => {
+                  const st = String(o.status ?? '').toLowerCase();
+                  return st !== 'finalizada' && st !== '3';
+                }) || ocDocs[ocDocs.length - 1];
+                // Injeta motivoPausaMaterial na máquina para fallback
+                if (ocorrenciaMaterial?.motivoPausaMaterial) maquina.motivoPausaMaterial = ocorrenciaMaterial.motivoPausaMaterial;
+                if (ocorrenciaMaterial?.tecnicoDesignado) maquina.tecnicoDesignado = ocorrenciaMaterial.tecnicoDesignado;
+              }
+            } catch (err) {
+              console.warn('[mensagens.js] Aviso ao buscar ocorrencia de material:', err.message);
+            }
+            await notificarFaltaMaterial({ ...opcoes, maquina, ocorrencia: ocorrenciaMaterial });
           }
 
           const tecAtual = dados.tecnicoDesignado || dados.tecnicoDesignadoId;

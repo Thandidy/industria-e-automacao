@@ -301,6 +301,7 @@ class OcorrenciaProvider extends ChangeNotifier {
     await FirebaseFirestore.instance.collection('maquinas').doc(eq.id).update({
       'status': statusEquipamento.name,
       'motivoParada': motivo,
+      'prioridade': prioridade,
       'responsavel': PerfilUsuario.operador.name,
       'grauCritico': ehCritica,
       'aprovadaManutencao': !ehCritica,
@@ -377,6 +378,14 @@ class OcorrenciaProvider extends ChangeNotifier {
     // REGRA DE NEGÓCIO: O supervisor só pode designar técnicos em casos de paradas críticas
     if (!o.ehCritica) {
       throw Exception('Regra de negócio: A designação de técnicos pelo supervisor é permitida exclusivamente em paradas de grau Crítico. Nas demais ocorrências, os técnicos assumem livremente.');
+    }
+
+    // REGRA DE NEGÓCIO: Não permitir designar novo técnico se já tiver iniciado o atendimento ou se houver pedido de material
+    if (o.dataInicio != null || o.status == StatusOcorrencia.emAndamento) {
+      throw Exception('Não é permitido reatribuir o técnico: o atendimento de manutenção já foi iniciado.');
+    }
+    if (o.solicitouMaterial || o.status == StatusOcorrencia.aguardandoMaterial) {
+      throw Exception('Não é permitido reatribuir o técnico: a ocorrência já possui pedido de materiais em andamento.');
     }
 
     final agora = DateTime.now();
@@ -489,9 +498,18 @@ class OcorrenciaProvider extends ChangeNotifier {
         ),
       );
 
+    final ehCritica = novaPrioridade.toLowerCase().trim() == 'crítica' || novaPrioridade.toLowerCase().trim() == 'critica';
+
     await FirebaseFirestore.instance.collection('ocorrencias').doc(ocorrenciaId).update({
       'prioridade': novaPrioridade,
+      'grauCritico': ehCritica,
       'historico': historicoAtualizado.map((h) => h.toJson()).toList(),
+    });
+
+    await FirebaseFirestore.instance.collection('maquinas').doc(o.equipamentoId).update({
+      'prioridade': novaPrioridade,
+      'grauCritico': ehCritica,
+      'ultimoAtualizacao': FieldValue.serverTimestamp(),
     });
   }
 

@@ -436,17 +436,41 @@ class _PainelSupervisorViewState extends State<PainelSupervisorView> {
                           ),
                       ],
                     ),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: precisaAprovacao ? Colors.purpleAccent.shade700 : Colors.indigo,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      ),
-                      icon: Icon(precisaAprovacao ? Icons.gavel : Icons.edit, size: 16, color: Colors.white),
-                      label: Text(
-                        precisaAprovacao ? 'Aprovar & Designar' : 'Reatribuir Técnico',
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
-                      ),
-                      onPressed: () => _abrirModalAprovarEDesignar(oc),
+                    Builder(
+                      builder: (context) {
+                        final jaIniciouOuPediuMaterial = oc.dataInicio != null ||
+                            oc.status == StatusOcorrencia.emAndamento ||
+                            oc.solicitouMaterial ||
+                            oc.status == StatusOcorrencia.aguardandoMaterial;
+
+                        final podeReatribuir = !jaIniciouOuPediuMaterial;
+
+                        return ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: precisaAprovacao
+                                ? Colors.purpleAccent.shade700
+                                : (podeReatribuir ? Colors.indigo : Colors.grey.shade700),
+                            disabledBackgroundColor: Colors.grey.withValues(alpha: 0.15),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          ),
+                          icon: Icon(
+                            precisaAprovacao
+                                ? Icons.gavel
+                                : (podeReatribuir ? Icons.edit : Icons.lock_outline),
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                          label: Text(
+                            precisaAprovacao
+                                ? 'Aprovar & Designar'
+                                : (podeReatribuir
+                                    ? 'Reatribuir Técnico'
+                                    : 'Atendimento em Curso (Bloqueado)'),
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                          onPressed: podeReatribuir ? () => _abrirModalAprovarEDesignar(oc) : null,
+                        );
+                      },
                     ),
                   ],
                 ),

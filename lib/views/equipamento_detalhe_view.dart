@@ -1057,9 +1057,29 @@ class _AcoesRBACCard extends StatelessWidget {
               if (oc != null) ...[
                 // Botão 1: Aprovar Manutenção & Designar Técnico
                 // REGRA: Supervisor só pode designar técnicos em casos de paradas críticas!
+                // Além disso, bloqueia se o técnico já iniciou o atendimento ou se há pedido de material
                 Builder(
                   builder: (context) {
-                    final podeDesignar = oc.ehCritica;
+                    final jaIniciouOuPediuMaterial = oc.dataInicio != null ||
+                        oc.status == StatusOcorrencia.emAndamento ||
+                        oc.solicitouMaterial ||
+                        oc.status == StatusOcorrencia.aguardandoMaterial ||
+                        equipamento.status == StatusEquipamento.manutencao ||
+                        equipamento.status == StatusEquipamento.aguardandoMaterial;
+
+                    final podeDesignar = oc.ehCritica && !jaIniciouOuPediuMaterial;
+
+                    String rotuloBotao;
+                    if (!oc.ehCritica) {
+                      rotuloBotao = 'Designação Restrita a Paradas Críticas (Livre p/ Técnicos)';
+                    } else if (jaIniciouOuPediuMaterial) {
+                      rotuloBotao = 'Atendimento em Curso (Designação Bloqueada)';
+                    } else if (oc.tecnicoDesignado != null) {
+                      rotuloBotao = 'Reatribuir Técnico (${oc.tecnicoDesignado})';
+                    } else {
+                      rotuloBotao = 'Aprovar Manutenção & Designar Técnico';
+                    }
+
                     return ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: podeDesignar ? Colors.teal.shade700 : null,
@@ -1072,11 +1092,7 @@ class _AcoesRBACCard extends StatelessWidget {
                         color: podeDesignar ? Colors.white : Colors.white38,
                       ),
                       label: Text(
-                        podeDesignar
-                            ? (oc.tecnicoDesignado != null
-                                ? 'Aprovar Manutenção & Designar Técnico (${oc.tecnicoDesignado})'
-                                : 'Aprovar Manutenção & Designar Técnico')
-                            : 'Designação Restrita a Paradas Críticas (Livre p/ Técnicos)',
+                        rotuloBotao,
                         style: TextStyle(
                           color: podeDesignar ? Colors.white : Colors.white38,
                           fontWeight: FontWeight.bold,
